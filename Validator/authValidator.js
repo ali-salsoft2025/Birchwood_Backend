@@ -4,13 +4,13 @@ const { ApiResponse } = require("../Helpers")
 
 //signup Validator
 exports.signupValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
-  body('fatherFirstName').not().isEmpty().withMessage("Father First Name is Required"),
-  body('fatherLastName').not().isEmpty().withMessage("Father Last Name is Required"),
-  body('motherFirstName').not().isEmpty().withMessage("Mother First Name is Required"),
-  body('motherLastName').not().isEmpty().withMessage("Mother Last Name is Required"),
-  body('phone').not().isEmpty().withMessage("Phone Number is Required"),
-  body('password').not().isEmpty().withMessage("Password is Required").isStrongPassword().withMessage("Password is too Weak"),
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
+  body('fatherFirstName').not().isEmpty().withMessage("Father first name is required"),
+  body('fatherLastName').not().isEmpty().withMessage("Father last name is required"),
+  body('motherFirstName').not().isEmpty().withMessage("Mother first name is required"),
+  body('motherLastName').not().isEmpty().withMessage("Mother last name is required"),
+  body('phone').not().isEmpty().withMessage("Phone number is required"),
+  body('password').not().isEmpty().withMessage("Password is required").isStrongPassword().withMessage("Password is too weak"),
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -22,8 +22,8 @@ exports.signupValidator = [
 
 //signin Validator
 exports.signinValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
-  check('password', "Password is Required").not().isEmpty().withMessage("Password is Required"),
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
+  check('password', "Password is required").not().isEmpty().withMessage("Password is required"),
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -35,7 +35,7 @@ exports.signinValidator = [
 
 //email code Validator
 exports.emailCodeValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -47,8 +47,8 @@ exports.emailCodeValidator = [
 
 //verify code Validator
 exports.verifyCodeValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
-  check('code', "Verification Code is Required").not().isEmpty().isLength({ min: 4, max: 4   }).withMessage("Verification Code is Invalid"),
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
+  check('code', "Verification code is required").not().isEmpty().isLength({ min: 4, max: 4   }).withMessage("Enter a valid 4-digit code"),
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -60,15 +60,15 @@ exports.verifyCodeValidator = [
 
 //reset password Validator
 exports.resetPasswordValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
-  check('password', "Password is Required").not().isEmpty().isStrongPassword().withMessage("Password is too Weak"),
-  check('confirmPassword', "Confirm Password is Required").not().isEmpty().custom((value, { req }) => {
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
+  check('password', "Password is required").not().isEmpty().isStrongPassword().withMessage("Password is too weak"),
+  check('confirmPassword', "Confirm password is required").not().isEmpty().custom((value, { req }) => {
     if (value !== req.body.password) {
-      throw new Error('Password confirmation does not match password');
+      throw new Error("Passwords do not match");
     }
     return true;
   }),
-  check('code', "Verification Code is Required").not().isEmpty().isLength({ min: 4, max: 4 }).withMessage("Verification Code is Invalid"),
+  check('code', "Verification code is required").not().isEmpty().isLength({ min: 4, max: 4 }).withMessage("Enter a valid 4-digit code"),
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -80,7 +80,7 @@ exports.resetPasswordValidator = [
 
 //admin signup Validator
 exports.adminRegisterValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
   body('firstName').not().isEmpty().withMessage("First Name is Required"),
   body('lastName').not().isEmpty().withMessage("Last Name is Required"),
   body('password').not().isEmpty().withMessage("Password is Required").isStrongPassword().withMessage("Password is too Weak"),
@@ -96,7 +96,7 @@ exports.adminRegisterValidator = [
 
 //signup coach Validator
 exports.teacherSignupValidator = [
-  check('email', "Email is Required").not().isEmpty().isEmail().withMessage("Email is Invalid"),
+  check('email', "Email is required").not().isEmpty().isEmail().withMessage("Enter a valid email address"),
   body('email').not().isEmpty().withMessage("Email is Required"),
   body('firstName').not().isEmpty().withMessage("First Name is Required"),
   body('lastName').not().isEmpty().withMessage("Last Name is Required"),

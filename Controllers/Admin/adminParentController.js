@@ -19,6 +19,11 @@ const {
   validateResetToken,
 } = require("../../Helpers/verification");
 const mongoose = require("mongoose");
+const {
+  assignParentImagesFromBody,
+  replaceParentUploadedImages,
+  deleteParentUploadedImages,
+} = require("../../Helpers/parentImages");
 
 
 // Add a new parent
@@ -35,9 +40,11 @@ exports.addParent = async (req, res) => {
     city,
     state,
     image,
+    fatherImage,
+    motherImage,
     zip,
     status,
-  } = req.body;
+  } = assignParentImagesFromBody(req.body);
 
   try {
     let existingParent = await Parent.findOne({ email });
@@ -59,6 +66,8 @@ exports.addParent = async (req, res) => {
       city,
       state,
       image,
+      fatherImage,
+      motherImage,
       zip,
       status: status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
     });
@@ -229,23 +238,15 @@ function makeParentPassword() {
 exports.updateParent = async (req, res) => {
   
   try {
-    if (req.body.image) {
-      let currentParent = await Parent.findById(req.params.id);
-
-      if (currentParent.image) {
-        const filePath = `./Uploads/${currentParent.image}`;
-
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`File '${filePath}' deleted.`);
-        } else {
-          console.log(`File '${filePath}' does not exist.`);
-        }
-      }
+    const currentParent = await Parent.findById(req.params.id);
+    if (!currentParent) {
+      return res.json(ApiResponse({}, "No parent found", false));
     }
 
+    const { password, ...rawUpdates } = req.body;
+    const updates = assignParentImagesFromBody(rawUpdates);
+    replaceParentUploadedImages(currentParent, updates);
 
-    const { password, ...updates } = req.body;
     let parent = await Parent.findByIdAndUpdate(req.params.id, updates, { new: true });
 
     if (!parent) {
@@ -321,12 +322,7 @@ exports.deleteParent = async (req, res) => {
 
     await Parent.findByIdAndDelete(parent._id);
 
-    if (parent.image) {
-      const filePath = `./Uploads/${parent.image}`;
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
+    deleteParentUploadedImages(parent);
 
     return res.json(ApiResponse({}, "Parent Profile Deleted Successfully", true));
   } catch (error) {

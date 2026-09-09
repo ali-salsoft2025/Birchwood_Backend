@@ -10,8 +10,9 @@ const {
   signinValidator,
 } = require("../../../Validator/authValidator");
 const { authLimiter } = require("../../../Middlewares/rateLimit");
+const { uploadParentImages } = require("../../../Middlewares/upload");
 
-router.post("/signup", authLimiter, signupValidator, signup);
+router.post("/signup", authLimiter, uploadParentImages, signupValidator, signup);
 router.post("/signin", authLimiter, signinValidator, signin);
 router.post("/emailVerificationCode", authLimiter, emailCodeValidator, emailVerificationCode);
 router.post("/verifyRecoverCode", authLimiter, verifyCodeValidator, verifyRecoverCode);

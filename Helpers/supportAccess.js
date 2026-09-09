@@ -70,7 +70,7 @@ async function resolveParticipant(participantRole, participantId) {
 
   if (participantRole === "PARENT") {
     const parent = await Parent.findById(participantId).select(
-      "_id fatherFirstName fatherLastName motherFirstName motherLastName image status"
+      "_id fatherFirstName fatherLastName motherFirstName motherLastName image fatherImage motherImage status"
     );
     if (!parent || parent.status !== "ACTIVE") return null;
     return { doc: parent, name: displayParentName(parent) };

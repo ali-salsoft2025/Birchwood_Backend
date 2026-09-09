@@ -222,6 +222,7 @@ async function seedParents() {
       address: item.address,
       status: item.status,
       image: imageName,
+      fatherImage: imageName,
       createdAt: new Date(item.createdAt),
     };
 

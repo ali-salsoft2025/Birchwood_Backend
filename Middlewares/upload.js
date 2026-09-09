@@ -106,3 +106,35 @@ exports.uploadProduct = wrapUpload(
     { name: "gallery", maxCount: 10 },
   ])
 );
+
+const parentImageStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "Uploads/");
+  },
+  filename: function (req, file, cb) {
+    const filename = uniqueName(file.originalname);
+    req.body[file.fieldname] = filename;
+    cb(null, filename);
+  },
+});
+
+const parentImageUpload = multer({
+  storage: parentImageStorage,
+  limits,
+  fileFilter: (req, file, cb) => {
+    if (IMAGE_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Image File Type not Allowed"), false);
+    }
+  },
+});
+
+/** Optional father/mother (and legacy image) photos. Skips non-multipart JSON bodies. */
+exports.uploadParentImages = wrapUpload(
+  parentImageUpload.fields([
+    { name: "fatherImage", maxCount: 1 },
+    { name: "motherImage", maxCount: 1 },
+    { name: "image", maxCount: 1 },
+  ])
+);

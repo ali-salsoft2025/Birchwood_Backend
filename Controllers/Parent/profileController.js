@@ -2,8 +2,10 @@ const Parent = require("../../Models/Parent");
 const Children = require("../../Models/Children");
 const { ApiResponse, pick } = require("../../Helpers/index");
 const sanitizeUser = require("../../Helpers/sanitizeUser");
-const fs = require("fs");
-const path = require("path");
+const {
+  assignParentImagesFromBody,
+  replaceParentUploadedImages,
+} = require("../../Helpers/parentImages");
 
 const PARENT_PROFILE_FIELDS = [
   "fatherFirstName",
@@ -15,6 +17,8 @@ const PARENT_PROFILE_FIELDS = [
   "city",
   "state",
   "image",
+  "fatherImage",
+  "motherImage",
 ];
 
 exports.getProfile = async (req, res) => {
@@ -29,21 +33,16 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const updates = pick(req.body, PARENT_PROFILE_FIELDS);
+    const updates = assignParentImagesFromBody(
+      pick(req.body, PARENT_PROFILE_FIELDS)
+    );
 
-    if (updates.image) {
-      const currentUser = await Parent.findById(req.user._id);
-      if (currentUser && currentUser.image) {
-        const imagePath = path.join("./Uploads", currentUser.image);
-        if (fs.existsSync(imagePath)) {
-          try {
-            fs.unlinkSync(imagePath);
-          } catch (err) {
-            console.error("Error while deleting the previous image:", err);
-          }
-        }
-      }
+    const currentUser = await Parent.findById(req.user._id);
+    if (!currentUser) {
+      return res.json(ApiResponse({}, "No user found", false));
     }
+
+    replaceParentUploadedImages(currentUser, updates);
 
     const user = await Parent.findByIdAndUpdate(req.user._id, updates, {
       new: true,
@@ -63,11 +62,11 @@ exports.changePassword = async (req, res) => {
   try {
     const user = await Parent.findById(req.user._id);
     if (!user.authenticate(old_password)) {
-      return res.json(ApiResponse({}, "Current password is Invalid!", false));
+      return res.json(ApiResponse({}, "Current password is incorrect", false));
     }
     if (old_password == new_password) {
       return res.json(
-        ApiResponse({}, "New password cannot be same as old password!", false)
+        ApiResponse({}, "New password must be different from your current password", false)
       );
     }
 
@@ -76,7 +75,7 @@ exports.changePassword = async (req, res) => {
 
     return res
       .status(201)
-      .json(ApiResponse({}, "Password Updated Successfully", true));
+      .json(ApiResponse({}, "Password updated successfully", true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, error.message, false));
   }
@@ -86,7 +85,10 @@ exports.getAllMyChildren = async (req, res) => {
   try {
     const parent = await Parent.findById(req.user._id).populate({
       path: "childrens",
-      populate: { path: "classroom" },
+      populate: {
+        path: "classroom",
+        populate: { path: "teacher", select: "firstName lastName" },
+      },
     });
 
     if (!parent) {

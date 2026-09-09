@@ -9,12 +9,12 @@ const {
 const { assignChild } = require("../../../Controllers/Children/childProfileController");
 const router = express.Router();
 const { authenticatedRoute } = require("../../../Middlewares/auth");
-const { uploadFile } = require("../../../Middlewares/upload");
+const { uploadParentImages } = require("../../../Middlewares/upload");
 const { changePasswordValidator } = require("../../../Validator/profileValidator");
 const { assignChildValidator } = require("../../../Validator/childValidator");
 
 router.get("/getProfile", authenticatedRoute, getProfile);
-router.post("/updateProfile", authenticatedRoute, uploadFile, updateProfile);
+router.post("/updateProfile", authenticatedRoute, uploadParentImages, updateProfile);
 router.post(
   "/changePassword",
   authenticatedRoute,

@@ -2,6 +2,7 @@ const Parent = require("../../Models/Parent");
 const { generateToken, ApiResponse, generateRandom6DigitID, pick } = require("../../Helpers/index");
 const { sendNotificationToAdmin } = require("../../Helpers/notification");
 const sanitizeUser = require("../../Helpers/sanitizeUser");
+const { assignParentImagesFromBody } = require("../../Helpers/parentImages");
 
 const PARENT_SIGNUP_FIELDS = [
   "fatherFirstName",
@@ -15,6 +16,8 @@ const PARENT_SIGNUP_FIELDS = [
   "city",
   "state",
   "image",
+  "fatherImage",
+  "motherImage",
 ];
 
 exports.signup = async (req, res) => {
@@ -25,13 +28,16 @@ exports.signup = async (req, res) => {
     if (parent) {
       return res
         .status(400)
-        .json(ApiResponse({}, "Account with this Email Already Exist", false));
+        .json(ApiResponse({}, "An account with this email already exists", false));
     }
 
     const parentId = generateRandom6DigitID("P");
+    const payload = assignParentImagesFromBody(
+      pick(req.body, PARENT_SIGNUP_FIELDS)
+    );
 
     parent = new Parent({
-      ...pick(req.body, PARENT_SIGNUP_FIELDS),
+      ...payload,
       parentId,
       isAdmin: false,
     });
@@ -46,12 +52,12 @@ exports.signup = async (req, res) => {
     return res.status(200).json(
       ApiResponse(
         { parent: sanitizeUser(parent) },
-        "Account Created Successfully",
+        "Account created successfully",
         true
       )
     );
   } catch (error) {
-    return res.status(500).json(ApiResponse({}, error.message, false));
+    return res.status(500).json(ApiResponse({}, "Something went wrong. Please try again.", false));
   }
 };
 
@@ -64,16 +70,16 @@ exports.signin = async (req, res) => {
       .then((parent) => {
         if (!parent) {
           return res.json(
-            ApiResponse({}, "Parent with this email not found", false)
+            ApiResponse({}, "No parent account found with this email", false)
           );
         }
         if (!parent.authenticate(password)) {
-          return res.json(ApiResponse({}, "Invalid password!", false));
+          return res.json(ApiResponse({}, "Incorrect password", false));
         }
 
         if (parent.status === "INACTIVE") {
           return res.json(
-            ApiResponse({}, "Your Account is Not Active yet", false)
+            ApiResponse({}, "Your account isn't active yet. Please wait for school approval.", false)
           );
         }
 
@@ -82,15 +88,15 @@ exports.signin = async (req, res) => {
         return res.json(
           ApiResponse(
             { parent: sanitizeUser(parent), token },
-            "Parent Logged In Successfully",
+            "Signed in successfully",
             true
           )
         );
       })
       .catch((err) => {
-        return res.json(ApiResponse({}, err.message, false));
+        return res.json(ApiResponse({}, "Something went wrong. Please try again.", false));
       });
   } catch (error) {
-    return res.status(500).json(ApiResponse({}, error.message, false));
+    return res.status(500).json(ApiResponse({}, "Something went wrong. Please try again.", false));
   }
 };

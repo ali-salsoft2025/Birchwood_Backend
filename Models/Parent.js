@@ -50,6 +50,14 @@ const parentSchema = new Schema(
     image: {
       type: String,
     },
+    fatherImage: {
+      type: String,
+      required: false,
+    },
+    motherImage: {
+      type: String,
+      required: false,
+    },
     hashed_password: {
       type: String,
     },

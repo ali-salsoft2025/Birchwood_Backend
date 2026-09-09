@@ -99,6 +99,7 @@ function listAggregate(req) {
               _id: { $arrayElemAt: ["$classroomInfo._id", 0] },
               classroomName: { $arrayElemAt: ["$classroomInfo.classroomName", 0] },
               classroomId: { $arrayElemAt: ["$classroomInfo.classroomId", 0] },
+              classroomGrade: { $arrayElemAt: ["$classroomInfo.classroomGrade", 0] },
               color: { $arrayElemAt: ["$classroomInfo.color", 0] },
             },
             null,
