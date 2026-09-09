@@ -13,10 +13,12 @@ const {
   validateResetToken,
 } = require("../../Helpers/verification");
 
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
 //email verification code
 exports.emailVerificationCode = async (req, res) => {
   try {
-    let { email } = req.body;
+    const email = normalizeEmail(req.body.email);
 
     const parent = await Parent.findOne({ email });
     const teacher = await Teacher.findOne({ email });
@@ -64,7 +66,8 @@ exports.emailVerificationCode = async (req, res) => {
 //verify recover code
 exports.verifyRecoverCode = async (req, res) => {
   try {
-    const { code, email } = req.body;
+    const { code, email: rawEmail } = req.body;
+    const email = normalizeEmail(rawEmail);
     const isValidCode = await validateResetToken(code, email);
 
     if (isValidCode) {
@@ -83,7 +86,14 @@ exports.verifyRecoverCode = async (req, res) => {
 //reset password
 exports.resetPassword = async (req, res) => {
   try {
-    const { password, confirm_password, code, email } = req.body;
+    const { password, confirmPassword, code, email: rawEmail } = req.body;
+    const email = normalizeEmail(rawEmail);
+
+    if (confirmPassword && confirmPassword !== password) {
+      return res
+        .status(400)
+        .json(ApiResponse({}, "Passwords do not match", false));
+    }
 
     const reset_status = await validateResetToken(code, email);
 

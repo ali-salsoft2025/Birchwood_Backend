@@ -11,6 +11,7 @@ const { ApiResponse } = require("../../Helpers/index");
 const { errorHandler } = require("../../Helpers/errorHandler");
 
 const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const OVERVIEW_RANGES = ["thisWeek", "lastWeek", "thisMonth", "lastMonth"];
 
 const startOfDay = (date) => {
   const next = new Date(date);
@@ -80,6 +81,76 @@ async function statusBreakdown(model, rangeStart, rangeEnd, dateField = "checkIn
   return { ...stats, tracked, rate, total: tracked + stats.HOLIDAY };
 }
 
+function ymd(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getOverviewWindow(range, now) {
+  if (range === "lastWeek") {
+    const start = startOfWeekMonday(now);
+    start.setDate(start.getDate() - 7);
+    return { start, end: endOfDay(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)), mode: "week" };
+  }
+
+  if (range === "thisMonth") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start, end: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)), mode: "month" };
+  }
+
+  if (range === "lastMonth") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return { start, end: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)), mode: "month" };
+  }
+
+  const start = startOfWeekMonday(now);
+  return { start, end: endOfDay(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)), mode: "week" };
+}
+
+async function dailyPresentCounts(rangeStart, rangeEnd, model) {
+  const rows = await model.aggregate([
+    {
+      $match: {
+        status: "PRESENT",
+        checkIn: { $gte: rangeStart, $lte: rangeEnd },
+      },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: "%Y-%m-%d", date: "$checkIn" } },
+        total: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byDay = {};
+  rows.forEach((row) => {
+    byDay[row._id] = row.total;
+  });
+
+  const labels = [];
+  const values = [];
+  const cursor = startOfDay(rangeStart);
+  const last = startOfDay(rangeEnd);
+  while (cursor <= last) {
+    labels.push(String(cursor.getDate()));
+    values.push(byDay[ymd(cursor)] || 0);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return { labels, values };
+}
+
+async function overviewSeries(window, model) {
+  if (window.mode === "week") {
+    const data = await weeklyCounts(window.start, model, "checkIn", { status: "PRESENT" });
+    return { labels: WEEK_LABELS, values: data.totals };
+  }
+  return dailyPresentCounts(window.start, window.end, model);
+}
+
 function buildBreakdownChart(stats = {}) {
   return {
     labels: ["Present", "Absent", "Leave", "Holiday"],
@@ -106,6 +177,10 @@ exports.getOverview = async (req, res) => {
     const thisWeekStart = startOfWeekMonday(now);
     const lastWeekStart = new Date(thisWeekStart);
     lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+    const rangeKey = OVERVIEW_RANGES.includes(String(req.query.range || ""))
+      ? String(req.query.range)
+      : "thisWeek";
+    const overviewWindow = getOverviewWindow(rangeKey, now);
 
     const [
       students,
@@ -123,6 +198,8 @@ exports.getOverview = async (req, res) => {
       teacherLastWeekPresent,
       studentWeekAbsent,
       teacherWeekAbsent,
+      studentOverview,
+      teacherOverview,
       holidays,
       homework,
     ] = await Promise.all([
@@ -141,6 +218,8 @@ exports.getOverview = async (req, res) => {
       weeklyCounts(lastWeekStart, TeacherAttendance, "checkIn", { status: "PRESENT" }),
       weeklyCounts(thisWeekStart, Attendance, "checkIn", { status: "ABSENT" }),
       weeklyCounts(thisWeekStart, TeacherAttendance, "checkIn", { status: "ABSENT" }),
+      overviewSeries(overviewWindow, Attendance),
+      overviewSeries(overviewWindow, TeacherAttendance),
       Holiday.find({ date: { $gte: monthStart, $lte: monthEnd } }).lean(),
       Homework.find({
         dueDate: { $gte: monthStart, $lte: monthEnd },
@@ -204,6 +283,14 @@ exports.getOverview = async (req, res) => {
               teachersAbsent: teacherWeekAbsent.totals,
               studentsPresentTotal: sum(studentWeekPresent.totals),
               teachersPresentTotal: sum(teacherWeekPresent.totals),
+            },
+            overview: {
+              range: rangeKey,
+              labels: studentOverview.labels,
+              studentsPresent: studentOverview.values,
+              teachersPresent: teacherOverview.values,
+              studentsPresentTotal: sum(studentOverview.values),
+              teachersPresentTotal: sum(teacherOverview.values),
             },
           },
           calendar: {

@@ -10,6 +10,8 @@
     "dev": "nodemon server.js",
     "seed:admin": "node scripts/seed-admin.js",
     "seed:admin:live": "node scripts/seed-admin.js --live",
+    "reset:admin": "node scripts/reset-admin.js",
+    "reset:admin:live": "node scripts/reset-admin.js --live",
     "seed:classrooms": "node scripts/seed-classrooms.js",
     "seed:teachers": "node scripts/seed-teachers.js",
     "seed:parents": "node scripts/seed-parents.js",

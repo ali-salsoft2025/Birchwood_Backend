@@ -83,7 +83,7 @@ exports.getAllPosts = async (req, res) => {
       }
     }
 
-    if (req.query.classroom) {
+    if (req.query.classroom && mongoose.Types.ObjectId.isValid(String(req.query.classroom))) {
       finalAggregate.push({ $match: { classroom: new mongoose.Types.ObjectId(req.query.classroom) } })
     }
 
@@ -91,16 +91,26 @@ exports.getAllPosts = async (req, res) => {
       finalAggregate.push({ $match: { activity: new mongoose.Types.ObjectId(req.query.activity) } });
     }
 
+    const childId = req.query.child || req.query.children;
+    if (childId) {
+      let childrenIds = [];
+      try {
+        const parsed = typeof childId === "string" && childId.trim().startsWith("[")
+          ? JSON.parse(childId)
+          : childId;
+        childrenIds = (Array.isArray(parsed) ? parsed : [parsed])
+          .map((id) => String(id))
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+          .map((id) => new mongoose.Types.ObjectId(id));
+      } catch (error) {
+        childrenIds = [];
+      }
 
-    if (req.query.children) {
-      let childrenIds = Array.isArray(JSON.parse(req.query.children)) ? JSON.parse(req.query.children) : [JSON.parse(req.query.children)];
-      // Convert children IDs to ObjectId format
-      childrenIds = childrenIds.map(id => new mongoose.Types.ObjectId(id));
-
-      // Match based on children array containing any of the provided student IDs
-      finalAggregate.push({
-        $match: { children: { $in: childrenIds } }
-      });
+      if (childrenIds.length) {
+        finalAggregate.push({
+          $match: { children: { $in: childrenIds } }
+        });
+      }
     }
 
 
