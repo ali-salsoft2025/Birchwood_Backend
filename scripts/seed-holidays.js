@@ -34,8 +34,6 @@ async function seedHolidays() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   const names = [...new Set(HOLIDAYS.map((item) => item.name))];
   const removed = await Holiday.deleteMany({ name: { $in: names } });
   if (removed.deletedCount) {
@@ -58,10 +56,14 @@ async function seedHolidays() {
   }
 
   console.log(`Seeded ${HOLIDAYS.length} holidays for 2026.`);
-  await mongoose.disconnect();
 }
 
-seedHolidays().catch((error) => {
-  console.error("Failed to seed holidays:", error.message);
-  process.exit(1);
-});
+module.exports = { seedHolidays };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedHolidays).catch((error) => {
+    console.error("Failed to seed holidays:", error.message);
+    process.exit(1);
+  });
+}

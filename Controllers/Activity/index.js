@@ -17,6 +17,7 @@ const {
   validateResetToken,
 } = require("../../Helpers/verification");
 const { sendAdminActivityUpdatesToTeachers } = require("../../Helpers/sockets");
+const { parseQueryList, pushInMatch } = require("../../Helpers/queryList");
 
 
 //signup
@@ -76,11 +77,7 @@ exports.getAllActivities = async (req, res) => {
     }
 
     if (status) {
-      finalAggregate.push({
-        $match: {
-          status: req.query.status,
-        },
-      });
+      pushInMatch(finalAggregate, "status", parseQueryList(status));
     }
 
     if (from) {

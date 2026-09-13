@@ -11,6 +11,7 @@ const { validateToken } = require("../../Helpers/index");
 const { generateString } = require("../../Helpers/index");
 const { errorHandler } = require("../../Helpers/errorHandler");
 const {generateRandom6DigitID} = require("../../Helpers")
+const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 
 const {
   sendNotificationToAdmin,
@@ -121,19 +122,11 @@ exports.getAllInventorys = async (req, res) => {
       }
 
 
-      if (req.query.category && mongoose.Types.ObjectId.isValid(req.query.category)) {
-        finalAggregate.push({
-          $match: {
-            "category._id": new mongoose.Types.ObjectId(req.query.category),
-          },
-        });
+      if (req.query.category) {
+        pushInMatch(finalAggregate, "category._id", parseObjectIdList(req.query.category));
       }
       if (req.query.status) {
-        finalAggregate.push({
-          $match: {
-            status: req.query.status,
-          },
-        });
+        pushInMatch(finalAggregate, "status", parseQueryList(req.query.status));
       }
     }
 

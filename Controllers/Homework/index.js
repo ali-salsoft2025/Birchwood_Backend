@@ -16,6 +16,7 @@ const {
   assertHomeworkWriteAccess,
   getParentChildIds,
 } = require("../../Helpers/accessControl");
+const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 
 exports.addHomework = async (req, res) => {
   try {
@@ -97,17 +98,15 @@ exports.getAllHomework = async (req, res) => {
     }
 
     if (children) {
-      finalAggregate.push({
-        $match: { children: new mongoose.Types.ObjectId(children) },
-      });
+      pushInMatch(finalAggregate, "children", parseObjectIdList(children));
     }
 
     if (type) {
-      finalAggregate.push({ $match: { type } });
+      pushInMatch(finalAggregate, "type", parseQueryList(type));
     }
 
     if (assignee) {
-      finalAggregate.push({ $match: { assignee } });
+      pushInMatch(finalAggregate, "assignee", parseQueryList(assignee));
     }
 
     if (from) {
@@ -123,7 +122,7 @@ exports.getAllHomework = async (req, res) => {
     }
 
     if (status) {
-      finalAggregate.push({ $match: { status } });
+      pushInMatch(finalAggregate, "status", parseQueryList(status));
     }
 
     finalAggregate.push(...homeworkLookupStages());

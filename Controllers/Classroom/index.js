@@ -18,6 +18,7 @@ const {
   sendNotificationToUser,
 } = require("../../Helpers/notification");
 const sanitizeUser = require("../../Helpers/sanitizeUser");
+const { parseQueryList, pushInMatch } = require("../../Helpers/queryList");
 const {
   createResetToken,
   validateResetToken,
@@ -130,11 +131,7 @@ exports.getAllClassrooms = async (req, res) => {
     ];
 
     if (req.query.status) {
-      finalAggregate.push({
-        $match: {
-          status: req.query.status,
-        },
-      });
+      pushInMatch(finalAggregate, "status", parseQueryList(req.query.status));
     }
 
     if(req.query.keyword){

@@ -334,8 +334,6 @@ async function seedTeachers() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   for (let index = 0; index < TEACHERS.length; index += 1) {
     const item = TEACHERS[index];
     const teacherId = seedEntityId("T", index + 1);
@@ -405,12 +403,16 @@ async function seedTeachers() {
 
   console.log(`Seeded ${TEACHERS.length} teachers with bios, education, and photos.`);
   console.log(`Password: ${DEFAULT_PASSWORD}`);
-  await mongoose.disconnect();
 }
 
-seedTeachers()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to seed teachers:", err.message);
-    process.exit(1);
-  });
+module.exports = { seedTeachers, TEACHERS };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedTeachers)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to seed teachers:", err.message);
+      process.exit(1);
+    });
+}

@@ -27,9 +27,10 @@ exports.sendNotificationToUser = async (
       assignee: userId,
       type,
       isRead: false,
-      sendTo: extras.sendTo || SEND_TO.ADMIN,
+      sendTo: extras.sendTo || SEND_TO.PARENTS,
       broadcastId: extras.broadcastId,
       recipientRole: extras.recipientRole || "",
+      isAdmin: false,
     });
     emitUserNotification(String(userId), notification);
     return notification;
@@ -39,12 +40,60 @@ exports.sendNotificationToUser = async (
   }
 };
 
+function systemInboxMatch() {
+  return {
+    isAdmin: true,
+    $or: [
+      { source: "SYSTEM" },
+      {
+        source: { $exists: false },
+        type: "NOTIFICATION",
+        $and: [
+          { $or: [{ sendTo: "ADMIN" }, { sendTo: { $exists: false } }] },
+          { $or: [{ deliveryStatus: "" }, { deliveryStatus: { $exists: false } }] },
+        ],
+      },
+    ],
+  };
+}
+
+function noticeMatch() {
+  return {
+    isAdmin: true,
+    $or: [
+      { source: "NOTICE" },
+      {
+        source: { $exists: false },
+        $or: [
+          { type: { $in: ["ALERT", "ANNOUNCEMENT"] } },
+          { sendTo: { $in: ["TEACHERS", "PARENTS", "ALL", "CUSTOM", "CLASSROOM"] } },
+          { deliveryStatus: { $in: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED"] } },
+        ],
+      },
+    ],
+  };
+}
+
+function isSystemInboxNotification(notification) {
+  if (!notification || notification.isAdmin === false) return false;
+  if (notification.source === "NOTICE") return false;
+  if (notification.source === "SYSTEM") return true;
+  const sendTo = notification.sendTo || "ADMIN";
+  const delivery = notification.deliveryStatus || "";
+  return notification.type === "NOTIFICATION" && sendTo === "ADMIN" && !delivery;
+}
+
+exports.systemInboxMatch = systemInboxMatch;
+exports.noticeMatch = noticeMatch;
+exports.isSystemInboxNotification = isSystemInboxNotification;
+
 exports.sendNotificationToAdmin = async (title, content, type = "NOTIFICATION") => {
   try {
     const notification = await Notification.create({
       title,
       content,
       isAdmin: true,
+      source: "SYSTEM",
       type,
       isRead: false,
       sendTo: SEND_TO.ADMIN,
@@ -82,6 +131,7 @@ exports.createAdminNotification = async ({
     content,
     type,
     isAdmin: true,
+    source: "NOTICE",
     isRead: false,
     sendTo: audience,
     targetTeachers: normalizeIdList(targetTeachers),
@@ -96,8 +146,6 @@ exports.createAdminNotification = async ({
       : { total: 0, sent: 0, failed: 0 },
   });
 
-  emitAdminNotification(notification);
-
   if (shouldBroadcast && recipientTotal > 0) {
     queueBroadcast(notification._id);
   } else if (shouldBroadcast) {
@@ -106,6 +154,9 @@ exports.createAdminNotification = async ({
       deliveryStats: { total: 0, sent: 0, failed: 0 },
     });
   }
+
+  // Keep other admin clients in sync when a notice/alert is created.
+  emitAdminNotification(notification);
 
   return notification;
 };

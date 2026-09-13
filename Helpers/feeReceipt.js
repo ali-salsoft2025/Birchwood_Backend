@@ -1,8 +1,7 @@
 const Fees = require("../Models/Fees");
 
-const SCHOOL_CODE = "BW";
-const VOUCHER_TYPE = "FEE";
-const SEQUENCE_LENGTH = 6;
+const SCHOOL_CODE = "FEE";
+const SEQUENCE_LENGTH = 5;
 
 function billingPeriod(month, year) {
   const mm = String(Number(month)).padStart(2, "0");
@@ -10,59 +9,48 @@ function billingPeriod(month, year) {
   return { mm, yyyy, yyyymm: `${yyyy}${mm}` };
 }
 
-function receiptPrefix(month, year) {
-  const { yyyymm } = billingPeriod(month, year);
-  return `${SCHOOL_CODE}-${VOUCHER_TYPE}-${yyyymm}-`;
+function receiptPrefix() {
+  return SCHOOL_CODE;
 }
 
-function extractSequence(receiptNo, month, year) {
+function extractSequence(receiptNo) {
   if (!receiptNo) return null;
   const value = String(receiptNo).trim().toUpperCase();
-  const { mm, yyyy, yyyymm } = billingPeriod(month, year);
 
-  const current = value.match(new RegExp(`^BW-FEE-${yyyymm}-(\\d+)$`));
+  const compact = value.match(/^FEE(\d+)$/);
+  if (compact) return parseInt(compact[1], 10);
+
+  const current = value.match(/^BW-FEE-\d{6}-(\d+)$/);
   if (current) return parseInt(current[1], 10);
 
-  const legacy = value.match(new RegExp(`^BW-${yyyy}-${mm}-(\\d+)$`));
+  const legacy = value.match(/^BW-\d{4}-\d{2}-(\d+)$/);
   if (legacy) return parseInt(legacy[1], 10);
+
+  const trailing = value.match(/(\d+)$/);
+  if (trailing) return parseInt(trailing[1], 10);
 
   return null;
 }
 
-async function generateFeeReceiptNo(month, year) {
-  const billingMonth = Number(month);
-  const billingYear = Number(year);
-
-  if (!billingMonth || billingMonth < 1 || billingMonth > 12 || !billingYear) {
-    throw new Error("Valid month and year are required to generate a receipt number");
-  }
-
-  const { mm, yyyy, yyyymm } = billingPeriod(billingMonth, billingYear);
-
+async function generateFeeReceiptNo() {
   const candidates = await Fees.find({
-    $or: [
-      { receiptNo: new RegExp(`^BW-FEE-${yyyymm}-`) },
-      { receiptNo: new RegExp(`^BW-${yyyy}-${mm}-`) },
-    ],
+    receiptNo: { $exists: true, $ne: "" },
   })
     .select("receiptNo")
     .lean();
 
   let sequence = 0;
   for (const item of candidates) {
-    const parsed = extractSequence(item.receiptNo, billingMonth, billingYear);
+    const parsed = extractSequence(item.receiptNo);
     if (parsed && parsed > sequence) sequence = parsed;
   }
 
-  return `${receiptPrefix(billingMonth, billingYear)}${String(sequence + 1).padStart(
-    SEQUENCE_LENGTH,
-    "0"
-  )}`;
+  return `${receiptPrefix()}${String(sequence + 1).padStart(SEQUENCE_LENGTH, "0")}`;
 }
 
 module.exports = {
   SCHOOL_CODE,
-  VOUCHER_TYPE,
+  SEQUENCE_LENGTH,
   receiptPrefix,
   generateFeeReceiptNo,
   extractSequence,

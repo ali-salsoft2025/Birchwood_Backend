@@ -7,6 +7,7 @@ const { ApiResponse, pick } = require("../../Helpers/index");
 const { errorHandler } = require("../../Helpers/errorHandler");
 const { syncChildParentAssignment } = require("../../Helpers/childParentSync");
 const { parseStringList } = require("../../Helpers/childHealth");
+const { parseQueryList, parseObjectIdList, inMatch } = require("../../Helpers/queryList");
 
 const HEALTH_LIST_FIELDS = ["allergies", "fears", "conditions", "summary"];
 
@@ -50,13 +51,12 @@ function listAggregate(req) {
   const pipeline = [{ $sort: { createdAt: sort === "oldest" ? 1 : -1 } }];
 
   const match = {};
-  if (status) match.status = status;
-  if (parent && mongoose.Types.ObjectId.isValid(parent)) {
-    match.parent = new mongoose.Types.ObjectId(parent);
-  }
-  if (classroom && mongoose.Types.ObjectId.isValid(classroom)) {
-    match.classroom = new mongoose.Types.ObjectId(classroom);
-  }
+  const statuses = parseQueryList(status);
+  const parentIds = parseObjectIdList(parent);
+  const classroomIds = parseObjectIdList(classroom);
+  Object.assign(match, inMatch("status", statuses) || {});
+  Object.assign(match, inMatch("parent", parentIds) || {});
+  Object.assign(match, inMatch("classroom", classroomIds) || {});
   if (Object.keys(match).length) pipeline.push({ $match: match });
 
   if (keyword) {

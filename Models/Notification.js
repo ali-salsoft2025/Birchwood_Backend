@@ -67,6 +67,11 @@ const notificationSchema = new Schema(
       sent: { type: Number, default: 0 },
       failed: { type: Number, default: 0 },
     },
+    source: {
+      type: String,
+      enum: ["SYSTEM", "NOTICE"],
+      default: "SYSTEM",
+    },
     type: {
       type: String,
       enum: ["ALERT", "ANNOUNCEMENT", "NOTIFICATION"],

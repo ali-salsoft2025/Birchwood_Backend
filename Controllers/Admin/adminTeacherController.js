@@ -8,6 +8,7 @@ const { ApiResponse, pick, generateRandom6DigitID, generateString } = require(".
 const { errorHandler } = require("../../Helpers/errorHandler");
 const { sendNotificationToAdmin } = require("../../Helpers/notification");
 const sanitizeUser = require("../../Helpers/sanitizeUser");
+const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 
 const TEACHER_CREATE_FIELDS = [
   "email",
@@ -129,20 +130,10 @@ exports.getAllTeachers = async (req, res) => {
     }
 
     if (status) {
-      finalAggregate.push({
-        $match: {
-          status: req.query.status,
-        },
-      });
+      pushInMatch(finalAggregate, "status", parseQueryList(status));
     }
 
-    if (classId && mongoose.Types.ObjectId.isValid(classId)) {
-      finalAggregate.push({
-        $match: {
-          classroom: new mongoose.Types.ObjectId(classId),
-        },
-      });
-    }
+    pushInMatch(finalAggregate, "classroom", parseObjectIdList(classId));
 
     if (from) {
       finalAggregate.push({

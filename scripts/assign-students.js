@@ -1,60 +1,16 @@
 /**
- * Assign seeded students to parents (1–2 each) and classes (max 2 per class) via admin API.
+ * Assign seeded students to parents (1–2 each) and classes (max 2 per class).
+ * Uses Mongo directly so it works on live without the API running.
  */
 require("../config/loadEnv");
-
-const BASE = `http://localhost:${process.env.PORT || 3031}`;
-const ADMIN_EMAIL = process.env.ADMIN_SEED_EMAIL || "admin@thebirchwoodacademy.com";
-const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD || "Bw#9kP2mQ7xR!vL4nT8w";
-
-const { parseStringList } = require("../Helpers/childHealth");
+const mongoose = require("mongoose");
+const Children = require("../Models/Children");
+const Parent = require("../Models/Parent");
+const Classroom = require("../Models/Classroom");
+const { syncChildParentAssignment } = require("../Helpers/childParentSync");
 
 const MAX_CHILDREN_PER_PARENT = 2;
 const MAX_STUDENTS_PER_CLASS = 2;
-
-async function request(method, urlPath, { token, json, query, formData } = {}) {
-  const url = new URL(urlPath, BASE);
-  if (query) {
-    Object.entries(query).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
-    });
-  }
-  const headers = { Accept: "application/json" };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  let body;
-  if (formData) {
-    body = formData;
-  } else if (json !== undefined) {
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify(json);
-  }
-  const res = await fetch(url, { method, headers, body });
-  const text = await res.text();
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = { raw: text.slice(0, 400) };
-  }
-  if (res.status >= 400 || parsed?.status === false) {
-    throw new Error(`${method} ${urlPath} → ${res.status} ${parsed?.message || text.slice(0, 200)}`);
-  }
-  return parsed;
-}
-
-function buildForm(fields) {
-  const form = new FormData();
-  Object.entries(fields).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) form.append(key, String(value));
-  });
-  return form;
-}
-
-function formatBirthday(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString().split("T")[0];
-}
 
 function parentSlots(parentCount, studentCount) {
   const slots = [];
@@ -97,84 +53,45 @@ function planClassIndices(classCount, studentCount, maxPerClass) {
   return { plan, loads };
 }
 
-async function signIn() {
-  const res = await request("POST", "/api/admin/auth/signin", {
-    json: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  const token = res?.data?.token;
-  if (!token) throw new Error("Admin sign-in did not return a token");
-  return token;
-}
-
-async function fetchAll(token, path, key) {
-  const res = await request("GET", path, { token, query: { page: 1, limit: 100, sort: "oldest" } });
-  const docs = res?.data?.docs || [];
-  if (!docs.length) throw new Error(`No ${key} found — run seed scripts first`);
-  return docs;
-}
-
-function serializeHealthField(value) {
-  return JSON.stringify(parseStringList(value));
-}
-
-function studentFormFields(student, extras = {}) {
-  return {
-    rollNumber: student.rollNumber,
-    firstName: student.firstName,
-    lastName: student.lastName || "",
-    term: student.term,
-    birthday: formatBirthday(student.birthday),
-    age: student.age,
-    allergies: serializeHealthField(student.allergies),
-    fears: serializeHealthField(student.fears),
-    conditions: serializeHealthField(student.conditions),
-    summary: serializeHealthField(student.summary),
-    status: student.status || "ACTIVE",
-    ...extras,
-  };
-}
-
 async function assignStudents() {
-  const token = await signIn();
-  console.log("Signed in as admin");
-
-  const students = await fetchAll(token, "/api/admin/children/getAllChildren", "students");
-  const parents = await fetchAll(token, "/api/admin/parent/getAllParent", "parents");
-  const classrooms = await fetchAll(token, "/api/classroom/getAllClassrooms", "classrooms");
-
-  const seeded = students.filter((s) => /^S\d{6}$/.test(s.rollNumber));
-  if (!seeded.length) {
-    throw new Error("No seeded students (S000001…) found — run npm run seed:children first");
+  if (!process.env.DB) {
+    throw new Error("DB is not set in .env");
   }
 
-  seeded.sort((a, b) => a.rollNumber.localeCompare(b.rollNumber));
-  parents.sort((a, b) => (a.parentId || "").localeCompare(b.parentId || ""));
-  classrooms.sort((a, b) => (a.classroomId || "").localeCompare(b.classroomId || ""));
+  const students = await Children.find({ rollNumber: /^S\d{6}$/ }).sort({ rollNumber: 1 });
+  const parents = await Parent.find({ parentId: /^P\d{6}$/ }).sort({ parentId: 1 });
+  const classrooms = await Classroom.find({ status: "ACTIVE" }).sort({ classroomId: 1 });
 
-  const parentPlan = planParentIndices(parents.length, seeded.length);
+  if (!students.length) {
+    throw new Error("No seeded students (S000001…) found — run npm run seed:children first");
+  }
+  if (!parents.length) {
+    throw new Error("No seeded parents (P000001…) found — run npm run seed:parents first");
+  }
+  if (!classrooms.length) {
+    throw new Error("No classrooms found — run npm run seed:classrooms first");
+  }
+
+  const parentPlan = planParentIndices(parents.length, students.length);
   const { plan: classPlan, loads: classLoads } = planClassIndices(
     classrooms.length,
-    seeded.length,
+    students.length,
     MAX_STUDENTS_PER_CLASS
   );
 
-  console.log(`Assigning ${seeded.length} students → ${parents.length} parents, ${classrooms.length} classes`);
+  console.log(`Assigning ${students.length} students → ${parents.length} parents, ${classrooms.length} classes`);
   console.log(`Limits: max ${MAX_CHILDREN_PER_PARENT}/parent, max ${MAX_STUDENTS_PER_CLASS}/class`);
 
-  for (let i = 0; i < seeded.length; i += 1) {
-    const student = seeded[i];
+  for (let i = 0; i < students.length; i += 1) {
+    const student = students[i];
     const parent = parents[parentPlan[i]];
     const classroom = classrooms[classPlan[i]];
+    const previousParentId = student.parent;
 
-    await request("POST", `/api/admin/children/updateChild/${student._id}`, {
-      token,
-      formData: buildForm(
-        studentFormFields(student, {
-          parent: parent._id,
-          classroom: classroom._id,
-        })
-      ),
-    });
+    student.parent = parent._id;
+    student.classroom = classroom._id;
+    await student.save();
+    await syncChildParentAssignment(student._id, parent._id, previousParentId);
 
     console.log(
       `${student.rollNumber} ${student.firstName} ${student.lastName} → parent ${parent.parentId} · class ${classroom.classroomId}`
@@ -205,7 +122,14 @@ async function assignStudents() {
   console.log("\nDone.");
 }
 
-assignStudents().catch((error) => {
-  console.error("Failed to assign students:", error.message);
-  process.exit(1);
-});
+module.exports = { assignStudents };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(assignStudents)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to assign students:", err.message);
+      process.exit(1);
+    });
+}

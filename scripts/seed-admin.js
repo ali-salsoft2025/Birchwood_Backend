@@ -16,8 +16,6 @@ async function seedAdmin() {
   const environment = process.env.NODE_ENV || "development";
   console.log(`Seeding admin using ${envFile} (${environment})`);
 
-  await mongoose.connect(process.env.DB);
-
   const fakeParentAdmin = await Parent.findOne({ email: ADMIN_EMAIL, isAdmin: true });
   if (fakeParentAdmin) {
     await Parent.deleteOne({ _id: fakeParentAdmin._id });
@@ -47,12 +45,16 @@ async function seedAdmin() {
   }
 
   console.log("Password:", ADMIN_PASSWORD);
-  await mongoose.disconnect();
 }
 
-seedAdmin()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to seed admin:", err.message);
-    process.exit(1);
-  });
+module.exports = { seedAdmin };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedAdmin)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to seed admin:", err.message);
+      process.exit(1);
+    });
+}

@@ -19,6 +19,7 @@ const {
   validateResetToken,
 } = require("../../Helpers/verification");
 const mongoose = require("mongoose");
+const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 const {
   assignParentImagesFromBody,
   replaceParentUploadedImages,
@@ -165,15 +166,14 @@ exports.getAllParent = async (req, res) => {
     }
 
     if (status) {
-      finalAggregate.push({
-        $match: { status },
-      });
+      pushInMatch(finalAggregate, "status", parseQueryList(status));
     }
 
-    if (studentId && mongoose.Types.ObjectId.isValid(studentId)) {
+    const studentIds = parseObjectIdList(studentId);
+    if (studentIds.length) {
       finalAggregate.push({
         $match: {
-          "childrens._id": new mongoose.Types.ObjectId(studentId),
+          "childrens._id": studentIds.length === 1 ? studentIds[0] : { $in: studentIds },
         },
       });
     }

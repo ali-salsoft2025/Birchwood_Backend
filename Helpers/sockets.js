@@ -39,8 +39,11 @@ exports.childLeaveNotification = async (recieverId, childData) => {
 exports.sendCommentNotification = async ({ post, authorType }) => {
   if (!post) return;
 
-  const populated = await post.populate([{ path: "children" }]);
-  const teacherId = toId(populated.author && populated.author._id);
+  const populated = await post.populate([
+    { path: "children" },
+    { path: "author", select: "_id" },
+  ]);
+  const teacherId = toId(populated.author?._id || populated.author);
   const parentIds = new Set();
 
   if (populated.type === "CHILD") {
@@ -81,8 +84,11 @@ exports.sendLikeAndLoveNotification = async ({
 }) => {
   if (!post) return;
 
-  const populated = await post.populate([{ path: "children" }]);
-  const teacherId = toId(populated.author && populated.author._id);
+  const populated = await post.populate([
+    { path: "children" },
+    { path: "author", select: "_id" },
+  ]);
+  const teacherId = toId(populated.author?._id || populated.author);
   const parentIds = new Set();
   const content = `${msg}: ${populated._id}`;
 
