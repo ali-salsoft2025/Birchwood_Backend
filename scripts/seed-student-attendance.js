@@ -70,7 +70,6 @@ async function seedStudentAttendance() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
   const students = await Children.find({ status: { $ne: "INACTIVE" } }).select("_id firstName lastName classroom");
   if (!students.length) {
     throw new Error("No students found. Run npm run seed:children first.");
@@ -102,12 +101,16 @@ async function seedStudentAttendance() {
   }
 
   console.log(`Seeded ${total} student attendance records for ${students.length} students.`);
-  await mongoose.disconnect();
 }
 
-seedStudentAttendance()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+module.exports = { seedStudentAttendance };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedStudentAttendance)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

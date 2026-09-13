@@ -132,6 +132,7 @@ async function clearPreviousSeedData() {
   const feeRemoved = await Fees.deleteMany({
     $or: [
       { receiptNo: { $regex: /^SEED/ } },
+      { receiptNo: { $regex: /^FEE\d+$/ } },
       { receiptNo: { $regex: /^BW-FEE-/ } },
       { receiptNo: { $regex: /^BW-\d{4}-\d{2}-/ } },
     ],
@@ -427,12 +428,10 @@ async function seedNotifications() {
   console.log(`Seeded ${NOTIFICATIONS.length} admin notifications.`);
 }
 
-async function seedAll() {
+async function seedFeesHomeworkPostsNotifications() {
   if (!process.env.DB) {
     throw new Error("DB is not set in .env");
   }
-
-  await mongoose.connect(process.env.DB);
 
   const [children, teachers, classrooms, activities] = await Promise.all([
     Children.find().sort({ createdAt: 1 }).limit(20),
@@ -457,10 +456,14 @@ async function seedAll() {
   await seedNotifications();
 
   console.log("Done — fees, homework, posts, and notifications seeded.");
-  await mongoose.disconnect();
 }
 
-seedAll().catch((error) => {
-  console.error("Failed to seed fees/homework/posts/notifications:", error.message);
-  process.exit(1);
-});
+module.exports = { seedFeesHomeworkPostsNotifications };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedFeesHomeworkPostsNotifications).catch((error) => {
+    console.error("Failed to seed fees/homework/posts/notifications:", error.message);
+    process.exit(1);
+  });
+}

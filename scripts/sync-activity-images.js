@@ -5,14 +5,10 @@ const mongoose = require("mongoose");
 const Activity = require("../Models/Activity");
 
 const UPLOAD_DIR = path.join(__dirname, "..", "Uploads");
-const FRONTEND_IMAGES_DIR = path.join(
-  __dirname,
-  "..",
-  "..",
-  "Birchwood_Admin",
-  "public",
-  "images"
-);
+const IMAGE_SOURCE_DIRS = [
+  path.join(__dirname, "..", "..", "Birchwood_Admin", "public", "images"),
+  path.join(__dirname, "assets", "activities"),
+];
 
 /** Maps frontend SVG filename → activity record */
 const ACTIVITY_IMAGES = [
@@ -114,12 +110,22 @@ function backendImageName(title) {
   return `activity-${slugify(title)}.svg`;
 }
 
+function findSourceSvg(sourceFile) {
+  for (const dir of IMAGE_SOURCE_DIRS) {
+    const sourcePath = path.join(dir, sourceFile);
+    if (fs.existsSync(sourcePath)) {
+      return sourcePath;
+    }
+  }
+  return null;
+}
+
 async function copySvg(sourceFile, destFile) {
-  const sourcePath = path.join(FRONTEND_IMAGES_DIR, sourceFile);
+  const sourcePath = findSourceSvg(sourceFile);
   const destPath = path.join(UPLOAD_DIR, destFile);
 
-  if (!fs.existsSync(sourcePath)) {
-    throw new Error(`Source SVG not found: ${sourcePath}`);
+  if (!sourcePath) {
+    throw new Error(`Source SVG not found: ${sourceFile}`);
   }
 
   await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
@@ -132,8 +138,9 @@ async function syncActivityImages() {
     throw new Error("DB is not set in .env");
   }
 
-  if (!fs.existsSync(FRONTEND_IMAGES_DIR)) {
-    throw new Error(`Frontend images folder not found: ${FRONTEND_IMAGES_DIR}`);
+  const hasSource = IMAGE_SOURCE_DIRS.some((dir) => fs.existsSync(dir));
+  if (!hasSource) {
+    throw new Error(`Activity image folders not found: ${IMAGE_SOURCE_DIRS.join(", ")}`);
   }
 
   await mongoose.connect(process.env.DB);

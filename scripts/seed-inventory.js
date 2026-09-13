@@ -190,8 +190,6 @@ async function seedInventory() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   const categoryMap = {};
   for (let i = 0; i < CATEGORIES.length; i += 1) {
     const item = CATEGORIES[i];
@@ -250,10 +248,14 @@ async function seedInventory() {
   }
 
   console.log(`Seeded ${INVENTORY.length} inventory items across ${CATEGORIES.length} categories.`);
-  await mongoose.disconnect();
 }
 
-seedInventory().catch((error) => {
-  console.error("Failed to seed inventory:", error.message);
-  process.exit(1);
-});
+module.exports = { seedInventory };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedInventory).catch((error) => {
+    console.error("Failed to seed inventory:", error.message);
+    process.exit(1);
+  });
+}

@@ -57,7 +57,6 @@ async function seedTimetable() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
   const classrooms = await Classroom.find({ status: "ACTIVE" });
   if (!classrooms.length) {
     throw new Error("No classrooms found. Run npm run seed:teachers first.");
@@ -78,12 +77,16 @@ async function seedTimetable() {
 
   await Timetable.insertMany(docs);
   console.log(`Seeded ${docs.length} timetable slots for ${classrooms.length} classrooms.`);
-  await mongoose.disconnect();
 }
 
-seedTimetable()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to seed timetable:", err.message);
-    process.exit(1);
-  });
+module.exports = { seedTimetable };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedTimetable)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to seed timetable:", err.message);
+      process.exit(1);
+    });
+}

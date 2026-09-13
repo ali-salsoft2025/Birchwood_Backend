@@ -23,6 +23,7 @@ router.use("/holiday", require("./Holidays"));
 router.use("/homework", require("./Homework"));
 router.use("/notification", require("./Notification"));
 router.use("/support", require("./Support"));
+router.use("/advertisement", require("./Advertisement"));
 
 router.use("/admin/auth", require("./Admin/AdminAuth"));
 router.use("/admin/teacher", require("./Admin/AdminTeacher"));

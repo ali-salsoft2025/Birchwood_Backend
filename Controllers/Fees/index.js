@@ -10,6 +10,7 @@ const { sendNotificationToAdmin } = require("../../Helpers/notification");
 const { generateFeeReceiptNo } = require("../../Helpers/feeReceipt");
 const { assertCanAccessChild } = require("../../Helpers/accessControl");
 const { default: mongoose } = require("mongoose");
+const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 
 
 exports.createVoucher = async (req, res) => {
@@ -61,20 +62,16 @@ exports.getAllVouchers = async (req, res) => {
       },
     ];
 
-    if(children){
-      finalAggregate.push({
-        $match:{
-          children:new mongoose.Types.ObjectId(children)
-        }
-      })
+    if (children) {
+      pushInMatch(finalAggregate, "children", parseObjectIdList(children));
     }
 
-    if(status){
+    const statuses = parseQueryList(status).map((item) => String(item).toUpperCase());
+    const paidFlags = [...new Set(statuses.map((item) => item === "PAID"))];
+    if (paidFlags.length === 1) {
       finalAggregate.push({
-        $match:{
-          isPaid:status == "PAID" ? true : false
-        }
-      })
+        $match: { isPaid: paidFlags[0] },
+      });
     }
 
     if (from) {

@@ -10,8 +10,6 @@ async function assignTeacherClassrooms() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   await Teacher.updateMany({}, { $unset: { classroom: 1 } });
   await Classroom.updateMany({}, { $unset: { teacher: 1 } });
   console.log("Cleared existing teacher ↔ classroom links.");
@@ -21,13 +19,16 @@ async function assignTeacherClassrooms() {
 
   const unassigned = await Teacher.countDocuments({ classroom: { $exists: false } });
   console.log(`${unassigned} teachers remain without a section (expected for inactive staff).`);
-
-  await mongoose.disconnect();
 }
 
-assignTeacherClassrooms()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to assign teacher classrooms:", err.message);
-    process.exit(1);
-  });
+module.exports = { assignTeacherClassrooms };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(assignTeacherClassrooms)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to assign teacher classrooms:", err.message);
+      process.exit(1);
+    });
+}

@@ -14,6 +14,7 @@ const {
 } = require("../../Helpers/notification");
 const { sendCommentNotification, sendLikeAndLoveNotification } = require("../../Helpers/sockets");
 const { assertPostModifyAccess } = require("../../Helpers/accessControl");
+const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 const mongoose = require('mongoose');
 
 exports.addPost = async (req, res) => {
@@ -72,9 +73,10 @@ exports.getAllPosts = async (req, res) => {
 
     let finalAggregate = []
 
-    if (req.query.type && ["CLASS", "CHILD"].includes(String(req.query.type).toUpperCase())) {
-      finalAggregate.push({ $match: { type: String(req.query.type).toUpperCase() } });
-    }
+    const types = parseQueryList(req.query.type)
+      .map((type) => String(type).toUpperCase())
+      .filter((type) => type === "CLASS" || type === "CHILD");
+    pushInMatch(finalAggregate, "type", types);
 
     if (req.query.keyword) {
       const keyword = String(req.query.keyword).trim();
@@ -83,34 +85,14 @@ exports.getAllPosts = async (req, res) => {
       }
     }
 
-    if (req.query.classroom && mongoose.Types.ObjectId.isValid(String(req.query.classroom))) {
-      finalAggregate.push({ $match: { classroom: new mongoose.Types.ObjectId(req.query.classroom) } })
-    }
+    pushInMatch(finalAggregate, "classroom", parseObjectIdList(req.query.classroom));
+    pushInMatch(finalAggregate, "activity", parseObjectIdList(req.query.activity));
 
-    if (req.query.activity && mongoose.Types.ObjectId.isValid(String(req.query.activity))) {
-      finalAggregate.push({ $match: { activity: new mongoose.Types.ObjectId(req.query.activity) } });
-    }
-
-    const childId = req.query.child || req.query.children;
-    if (childId) {
-      let childrenIds = [];
-      try {
-        const parsed = typeof childId === "string" && childId.trim().startsWith("[")
-          ? JSON.parse(childId)
-          : childId;
-        childrenIds = (Array.isArray(parsed) ? parsed : [parsed])
-          .map((id) => String(id))
-          .filter((id) => mongoose.Types.ObjectId.isValid(id))
-          .map((id) => new mongoose.Types.ObjectId(id));
-      } catch (error) {
-        childrenIds = [];
-      }
-
-      if (childrenIds.length) {
-        finalAggregate.push({
-          $match: { children: { $in: childrenIds } }
-        });
-      }
+    const childrenIds = parseObjectIdList(req.query.child || req.query.children);
+    if (childrenIds.length) {
+      finalAggregate.push({
+        $match: { children: { $in: childrenIds } }
+      });
     }
 
 
@@ -448,12 +430,6 @@ exports.likePost = async (req, res) => {
 
     await post.save();
 
-    post._doc.author = {
-      _id: req.user?._id,
-      image: req.user?.image,
-      ...(authorType === "teacher" ? { firstName: req.user?.firstName, lastName: req.user?.lastName } : { motherFirstName: req.user?.motherFirstName, motherLastName: req.user?.motherLastName }),
-    }
-
     sendLikeAndLoveNotification({
       user: req.user,
       post,
@@ -491,12 +467,6 @@ exports.lovePost = async (req, res) => {
     }
 
     await post.save();
-
-    post._doc.author = {
-      _id: req.user?._id,
-      image: req.user?.image,
-      ...(authorType === "teacher" ? { firstName: req.user?.firstName, lastName: req.user?.lastName } : { motherFirstName: req.user?.motherFirstName, motherLastName: req.user?.motherLastName }),
-    }
 
     sendLikeAndLoveNotification({
       user: req.user,

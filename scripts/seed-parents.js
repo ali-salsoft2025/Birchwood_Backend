@@ -196,8 +196,6 @@ async function seedParents() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   for (let index = 0; index < PARENTS.length; index += 1) {
     const item = PARENTS[index];
     const parentId = seedEntityId("P", index + 1);
@@ -245,12 +243,16 @@ async function seedParents() {
 
   console.log(`Seeded ${PARENTS.length} parents with details and photos. No children were created.`);
   console.log(`Password: ${DEFAULT_PASSWORD}`);
-  await mongoose.disconnect();
 }
 
-seedParents()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to seed parents:", err.message);
-    process.exit(1);
-  });
+module.exports = { seedParents, PARENTS };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedParents)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to seed parents:", err.message);
+      process.exit(1);
+    });
+}

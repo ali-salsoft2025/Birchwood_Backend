@@ -49,8 +49,6 @@ async function seedChildren() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   const seedRollNumbers = STUDENTS.map((_, index) => seedEntityId("S", index + 1));
   const removed = await Children.deleteMany({
     $or: [{ rollNumber: { $in: seedRollNumbers } }, { rollNumber: /^BW2026-/ }],
@@ -59,8 +57,8 @@ async function seedChildren() {
     console.log(`Removed ${removed.deletedCount} previously seeded students.`);
   }
 
-  await Parent.updateMany({}, { $set: { childrens: [] } });
-  console.log("Cleared parent.childrens links (students remain unassigned).");
+  await Parent.updateMany({ parentId: /^P\d{6}$/ }, { $set: { childrens: [] } });
+  console.log("Cleared seeded parent.childrens links (students remain unassigned).");
 
   for (let index = 0; index < STUDENTS.length; index += 1) {
     const item = STUDENTS[index];
@@ -93,12 +91,16 @@ async function seedChildren() {
   }
 
   console.log(`Seeded ${STUDENTS.length} students without class or parent assignments.`);
-  await mongoose.disconnect();
 }
 
-seedChildren()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to seed students:", err.message);
-    process.exit(1);
-  });
+module.exports = { seedChildren, STUDENTS };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedChildren)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to seed students:", err.message);
+      process.exit(1);
+    });
+}

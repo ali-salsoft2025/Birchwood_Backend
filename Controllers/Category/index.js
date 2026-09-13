@@ -7,6 +7,7 @@ const { generateToken } = require("../../Helpers/index");
 const { ApiResponse } = require("../../Helpers/index");
 const { errorHandler } = require("../../Helpers/errorHandler");
 const { sendNotificationToAdmin } = require("../../Helpers/notification");
+const { parseQueryList, pushInMatch } = require("../../Helpers/queryList");
 
 exports.addCategory = async (req, res) => {
   const { title, description } = req.body;
@@ -68,11 +69,7 @@ exports.getAllcategories = async (req, res) => {
     }
 
     if (status) {
-      finalAggregate.push({
-        $match: {
-          status: req.query.status,
-        },
-      });
+      pushInMatch(finalAggregate, "status", parseQueryList(status));
     }
 
     if (from) {

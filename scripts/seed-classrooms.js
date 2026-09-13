@@ -112,8 +112,6 @@ async function seedClassrooms() {
     throw new Error("DB is not set in .env");
   }
 
-  await mongoose.connect(process.env.DB);
-
   for (const room of CLASSROOMS) {
     if (!CLASSROOM_COLORS.includes(room.color)) {
       throw new Error(`Invalid logo color "${room.color}" for ${room.classroomId}`);
@@ -145,12 +143,16 @@ async function seedClassrooms() {
   }
 
   console.log(`Seeded ${CLASSROOMS.length} sections with logo colors.`);
-  await mongoose.disconnect();
 }
 
-seedClassrooms()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Failed to seed classrooms:", err.message);
-    process.exit(1);
-  });
+module.exports = { seedClassrooms, CLASSROOMS };
+
+if (require.main === module) {
+  const { runStandalone } = require("../Helpers/seedConnection");
+  runStandalone(seedClassrooms)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Failed to seed classrooms:", err.message);
+      process.exit(1);
+    });
+}

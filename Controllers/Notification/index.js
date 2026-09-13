@@ -9,6 +9,9 @@ const {
   markAdminNotificationUnread,
   markAllAdminNotificationsRead,
   markUserNotificationRead,
+  systemInboxMatch,
+  noticeMatch,
+  isSystemInboxNotification,
 } = require("../../Helpers/notification");
 const {
   SEND_TO,
@@ -17,15 +20,21 @@ const {
   countRecipients,
   queueBroadcast,
 } = require("../../Helpers/notificationBroadcast");
+const { parseQueryList } = require("../../Helpers/queryList");
 
 const TYPES = ["ALERT", "ANNOUNCEMENT", "NOTIFICATION"];
 
 function buildAdminMatch(query = {}) {
-  const match = { isAdmin: true };
+  const source = String(query.source || "NOTICE").toUpperCase();
+  const match = source === "SYSTEM" ? systemInboxMatch() : noticeMatch();
 
-  if (query.isRead === "true") match.isRead = true;
-  if (query.isRead === "false") match.isRead = false;
-  if (query.type && TYPES.includes(query.type)) match.type = query.type;
+  const reads = parseQueryList(query.isRead);
+  if (reads.length === 1) match.isRead = reads[0] === "true";
+
+  const types = parseQueryList(query.type).filter((type) => TYPES.includes(type));
+  if (types.length === 1) match.type = types[0];
+  else if (types.length > 1) match.type = { $in: types };
+
   if (query.sendTo && Object.values(SEND_TO).includes(query.sendTo)) {
     match.sendTo = query.sendTo;
   }
@@ -80,9 +89,14 @@ exports.getAllAdminNotifications = async (req, res) => {
 
 exports.getUnreadAdminNotifications = async (req, res) => {
   try {
+    const source = String(req.query.source || "SYSTEM").toUpperCase();
+    const inboxMatch = {
+      ...(source === "NOTICE" ? noticeMatch() : systemInboxMatch()),
+      isRead: false,
+    };
     const [count, notifications] = await Promise.all([
-      Notification.countDocuments({ isAdmin: true, isRead: false }),
-      Notification.find({ isAdmin: true, isRead: false })
+      Notification.countDocuments(inboxMatch),
+      Notification.find(inboxMatch)
         .sort({ createdAt: -1 })
         .limit(10)
         .lean(),
@@ -205,7 +219,7 @@ exports.markAsRead = async (req, res) => {
     notification.isRead = isRead;
     await notification.save();
 
-    if (notification.isAdmin) {
+    if (isSystemInboxNotification(notification)) {
       if (isRead) {
         markAdminNotificationRead(notification._id);
       } else {
@@ -229,12 +243,16 @@ exports.markAsRead = async (req, res) => {
 
 exports.markAllAsRead = async (req, res) => {
   try {
-    const result = await Notification.updateMany(
-      { isAdmin: true, isRead: false },
-      { isRead: true }
-    );
+    const source = String(req.body.source || "SYSTEM").toUpperCase();
+    const match = {
+      ...(source === "NOTICE" ? noticeMatch() : systemInboxMatch()),
+      isRead: false,
+    };
+    const result = await Notification.updateMany(match, { isRead: true });
 
-    markAllAdminNotificationsRead();
+    if (source !== "NOTICE") {
+      markAllAdminNotificationsRead();
+    }
 
     return res.json(
       ApiResponse(
