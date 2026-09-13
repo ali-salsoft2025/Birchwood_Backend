@@ -5,10 +5,20 @@ const mongoose = require("mongoose");
 const Activity = require("../Models/Activity");
 
 const UPLOAD_DIR = path.join(__dirname, "..", "Uploads");
-const IMAGE_SOURCE_DIRS = [
-  path.join(__dirname, "..", "..", "Birchwood_Admin", "public", "images"),
-  path.join(__dirname, "assets", "activities"),
-];
+const BACKEND_ROOT = path.join(__dirname, "..");
+
+function activityImageDirs() {
+  const dirs = [];
+  if (process.env.ACTIVITY_IMAGES_DIR) {
+    dirs.push(path.resolve(process.env.ACTIVITY_IMAGES_DIR));
+  }
+  dirs.push(
+    path.join(BACKEND_ROOT, "public", "images"),
+    path.join(BACKEND_ROOT, "..", "Birchwood_Admin", "public", "images"),
+    path.join(BACKEND_ROOT, "..", "admin", "public", "images"),
+  );
+  return dirs;
+}
 
 /** Maps frontend SVG filename → activity record */
 const ACTIVITY_IMAGES = [
@@ -111,10 +121,19 @@ function backendImageName(title) {
 }
 
 function findSourceSvg(sourceFile) {
-  for (const dir of IMAGE_SOURCE_DIRS) {
+  for (const dir of activityImageDirs()) {
     const sourcePath = path.join(dir, sourceFile);
     if (fs.existsSync(sourcePath)) {
       return sourcePath;
+    }
+  }
+  return null;
+}
+
+function resolveActivityImagesDir() {
+  for (const dir of activityImageDirs()) {
+    if (fs.existsSync(path.join(dir, "Reading.svg"))) {
+      return dir;
     }
   }
   return null;
@@ -138,9 +157,11 @@ async function syncActivityImages() {
     throw new Error("DB is not set in .env");
   }
 
-  const hasSource = IMAGE_SOURCE_DIRS.some((dir) => fs.existsSync(dir));
-  if (!hasSource) {
-    throw new Error(`Activity image folders not found: ${IMAGE_SOURCE_DIRS.join(", ")}`);
+  const sourceDir = resolveActivityImagesDir();
+  if (!sourceDir) {
+    throw new Error(
+      `Activity SVGs not found in public/images. Looked in:\n- ${activityImageDirs().join("\n- ")}`
+    );
   }
 
   await mongoose.connect(process.env.DB);
@@ -174,6 +195,8 @@ module.exports = {
   slugify,
   backendImageName,
   copySvg,
+  activityImageDirs,
+  resolveActivityImagesDir,
   syncActivityImages,
 };
 

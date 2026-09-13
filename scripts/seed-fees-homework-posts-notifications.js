@@ -11,6 +11,7 @@ const Teacher = require("../Models/Teacher");
 const Classroom = require("../Models/Classroom");
 const Activity = require("../Models/Activity");
 const { generateFeeReceiptNo } = require("../Helpers/feeReceipt");
+const { ACTIVITY_IMAGES } = require("./sync-activity-images");
 
 const UPLOAD_DIR = path.join(__dirname, "..", "Uploads");
 
@@ -110,13 +111,14 @@ function monthDueDate(year, month, day = 10) {
 }
 
 function activityImageFor(title) {
-  const slug = String(title || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const filename = `seed-activity-${slug}.svg`;
-  const fullPath = path.join(UPLOAD_DIR, filename);
-  return fs.existsSync(fullPath) ? filename : null;
+  const match = ACTIVITY_IMAGES.find((item) => item.title === title);
+  const candidates = [match?.file, title && `${title}.svg`].filter(Boolean);
+  for (const filename of candidates) {
+    if (fs.existsSync(path.join(UPLOAD_DIR, filename))) {
+      return filename;
+    }
+  }
+  return null;
 }
 
 function requireEntities(label, items, min = 1) {
