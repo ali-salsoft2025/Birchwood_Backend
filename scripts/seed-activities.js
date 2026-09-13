@@ -1,7 +1,8 @@
 require("../config/loadEnv");
 const {
   ACTIVITY_IMAGES,
-  copySvg,
+  copyActivityImage,
+  clearLegacyActivityUploads,
   resolveActivityImagesDir,
   activityImageDirs,
 } = require("./sync-activity-images");
@@ -38,10 +39,10 @@ async function seedActivities() {
   const sourceDir = resolveActivityImagesDir();
   if (!sourceDir) {
     throw new Error(
-      `Activity SVGs not found in public/images. Push Reading.svg and the other activity files, then re-run seed. Looked in:\n- ${activityImageDirs().join("\n- ")}`
+      `Activity images not found in public/images. Push Reading.png and the other activity files, then re-run seed. Looked in:\n- ${activityImageDirs().join("\n- ")}`
     );
   }
-  console.log(`Using activity illustrations from ${sourceDir}`);
+  console.log(`Using activity images from ${sourceDir}`);
 
   const titles = [...ACTIVITY_IMAGES.map((item) => item.title), ...LEGACY_TITLES];
   const removed = await Activity.deleteMany({ title: { $in: titles } });
@@ -50,9 +51,10 @@ async function seedActivities() {
   }
 
   await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
+  await clearLegacyActivityUploads();
 
   for (const item of ACTIVITY_IMAGES) {
-    await copySvg(item.file, item.file);
+    await copyActivityImage(item.file, item.file);
     console.log(`Copied ${item.file} → Uploads/${item.file}`);
 
     await Activity.create({
@@ -64,7 +66,7 @@ async function seedActivities() {
     console.log(`Created ${item.title} (ACTIVE)`);
   }
 
-  console.log(`Seeded ${ACTIVITY_IMAGES.length} activities from public/images SVGs.`);
+  console.log(`Seeded ${ACTIVITY_IMAGES.length} activities from public/images.`);
 }
 
 module.exports = { seedActivities };
