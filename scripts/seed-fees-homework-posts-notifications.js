@@ -112,11 +112,8 @@ function monthDueDate(year, month, day = 10) {
 
 function activityImageFor(title) {
   const match = ACTIVITY_IMAGES.find((item) => item.title === title);
-  const candidates = [match?.file, title && `${title}.svg`].filter(Boolean);
-  for (const filename of candidates) {
-    if (fs.existsSync(path.join(UPLOAD_DIR, filename))) {
-      return filename;
-    }
+  if (match?.file && fs.existsSync(path.join(UPLOAD_DIR, match.file))) {
+    return match.file;
   }
   return null;
 }

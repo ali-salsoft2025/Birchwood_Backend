@@ -20,90 +20,90 @@ function activityImageDirs() {
   return dirs;
 }
 
-/** Maps frontend SVG filename → activity record */
+/** Maps public/images filename → activity record */
 const ACTIVITY_IMAGES = [
   {
-    file: "Reading.svg",
+    file: "Reading.png",
     title: "Reading",
     description: "Story time, quiet reading, and children exploring books.",
   },
   {
-    file: "Sleeping.svg",
+    file: "Sleeping.png",
     title: "Sleeping",
     description: "Nap time, rest, and settling down for sleep.",
   },
   {
-    file: "Playing.svg",
+    file: "Playing.png",
     title: "Playing",
     description: "Free play, toys, games, and imaginative activities.",
   },
   {
-    file: "Eating.svg",
+    file: "Eating.png",
     title: "Eating",
     description: "Lunch, dinner, and mealtime with classmates.",
   },
   {
-    file: "Snack time.svg",
+    file: "Snack time.png",
     title: "Snack Time",
     description: "Morning snacks, fruit breaks, and light bites.",
   },
   {
-    file: "Learning.svg",
+    file: "Learning.png",
     title: "Learning",
     description: "Lessons, worksheets, and classroom learning moments.",
   },
   {
-    file: "Music.svg",
+    file: "Music.png",
     title: "Music",
     description: "Singing, instruments, rhythm, and music sessions.",
   },
   {
-    file: "Sports.svg",
+    file: "Sports.png",
     title: "Sports",
     description: "Running, sports drills, and active movement.",
   },
   {
-    file: "Bath.svg",
+    file: "Bath.png",
     title: "Bath Time",
     description: "Washing up, bath routines, and bathroom activities.",
   },
   {
-    file: "Handwash.svg",
+    file: "Handwash.png",
     title: "Hand Washing",
     description: "Hand hygiene and washing routines.",
   },
   {
-    file: "Brushing.svg",
+    file: "Brushing.png",
     title: "Brushing",
     description: "Teeth brushing and oral hygiene routines.",
   },
   {
-    file: "Painting.svg",
+    file: "Painting.png",
     title: "Painting",
     description: "Painting, colours, and creative art projects.",
   },
   {
-    file: "Drawing.svg",
+    file: "Drawing.png",
     title: "Drawing",
     description: "Drawing, sketching, and illustration activities.",
   },
   {
-    file: "Dancing.svg",
+    file: "Dancing.png",
     title: "Dancing",
     description: "Dance, movement, and rhythm activities.",
   },
   {
-    file: "Gardening.svg",
+    file: "Gardening.png",
     title: "Gardening",
     description: "Planting, watering, and outdoor garden activities.",
   },
   {
-    file: "Brain.svg",
+    file: "Brain.png",
     title: "Brain Games",
     description: "Puzzles, thinking games, and cognitive activities.",
   },
   {
-    file: "Quite time.svg",
+    file: "Quite time.png",
     title: "Quiet Time",
     description: "Calm corners, relaxation, and quiet activities.",
   },
@@ -117,10 +117,10 @@ function slugify(value) {
 }
 
 function backendImageName(title) {
-  return `activity-${slugify(title)}.svg`;
+  return `activity-${slugify(title)}.png`;
 }
 
-function findSourceSvg(sourceFile) {
+function findSourceImage(sourceFile) {
   for (const dir of activityImageDirs()) {
     const sourcePath = path.join(dir, sourceFile);
     if (fs.existsSync(sourcePath)) {
@@ -132,25 +132,52 @@ function findSourceSvg(sourceFile) {
 
 function resolveActivityImagesDir() {
   for (const dir of activityImageDirs()) {
-    if (fs.existsSync(path.join(dir, "Reading.svg"))) {
+    if (fs.existsSync(path.join(dir, "Reading.png"))) {
       return dir;
     }
   }
   return null;
 }
 
-async function copySvg(sourceFile, destFile) {
-  const sourcePath = findSourceSvg(sourceFile);
+function leftoverUploadNames(item) {
+  const slug = slugify(item.title);
+  const stem = path.parse(item.file).name;
+  return [
+    `${stem}.svg`,
+    `activity-${slug}.svg`,
+    `activity-${slug}.png`,
+    `seed-activity-${slug}.svg`,
+    `seed-activity-${slug}.png`,
+  ];
+}
+
+async function clearLegacyActivityUploads() {
+  await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
+  for (const item of ACTIVITY_IMAGES) {
+    for (const name of leftoverUploadNames(item)) {
+      const leftoverPath = path.join(UPLOAD_DIR, name);
+      if (fs.existsSync(leftoverPath)) {
+        await fs.promises.unlink(leftoverPath);
+        console.log(`Removed leftover Uploads/${name}`);
+      }
+    }
+  }
+}
+
+async function copyActivityImage(sourceFile, destFile = sourceFile) {
+  const sourcePath = findSourceImage(sourceFile);
   const destPath = path.join(UPLOAD_DIR, destFile);
 
   if (!sourcePath) {
-    throw new Error(`Source SVG not found: ${sourceFile}`);
+    throw new Error(`Source image not found: ${sourceFile}`);
   }
 
   await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
   await fs.promises.copyFile(sourcePath, destPath);
   return destFile;
 }
+
+const copySvg = copyActivityImage;
 
 async function syncActivityImages() {
   if (!process.env.DB) {
@@ -160,7 +187,7 @@ async function syncActivityImages() {
   const sourceDir = resolveActivityImagesDir();
   if (!sourceDir) {
     throw new Error(
-      `Activity SVGs not found in public/images. Looked in:\n- ${activityImageDirs().join("\n- ")}`
+      `Activity images not found in public/images. Looked in:\n- ${activityImageDirs().join("\n- ")}`
     );
   }
 
@@ -172,21 +199,22 @@ async function syncActivityImages() {
     console.log(`Removed ${removed.deletedCount} existing activities to refresh.`);
   }
 
+  await clearLegacyActivityUploads();
+
   for (const item of ACTIVITY_IMAGES) {
-    const imageName = backendImageName(item.title);
-    await copySvg(item.file, imageName);
-    console.log(`Copied ${item.file} → Uploads/${imageName}`);
+    await copyActivityImage(item.file, item.file);
+    console.log(`Copied ${item.file} → Uploads/${item.file}`);
 
     await Activity.create({
       title: item.title,
       description: item.description,
-      image: imageName,
+      image: item.file,
       status: "ACTIVE",
     });
     console.log(`Created activity: ${item.title}`);
   }
 
-  console.log(`Synced ${ACTIVITY_IMAGES.length} activities from frontend SVGs.`);
+  console.log(`Synced ${ACTIVITY_IMAGES.length} activities from public/images PNGs.`);
   await mongoose.disconnect();
 }
 
@@ -195,6 +223,8 @@ module.exports = {
   slugify,
   backendImageName,
   copySvg,
+  copyActivityImage,
+  clearLegacyActivityUploads,
   activityImageDirs,
   resolveActivityImagesDir,
   syncActivityImages,
