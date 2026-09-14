@@ -6,7 +6,7 @@ const Parent = require("../Models/Parent");
 const ADMIN_EMAIL = (process.env.ADMIN_SEED_EMAIL || "admin@thebirchwoodacademy.com")
   .trim()
   .toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD || "Bw#9kP2mQ7xR!vL4nT8w";
+const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD || "Admin@Birchwood1";
 
 async function seedAdmin() {
   if (!process.env.DB) {

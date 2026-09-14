@@ -10,6 +10,8 @@
     "dev": "nodemon server.js",
     "seed": "node scripts/seed.js",
     "seed:live": "node scripts/seed.js --live --yes",
+    "seed:auth": "node scripts/seed-auth.js",
+    "seed:auth:live": "node scripts/seed-auth.js --live",
     "reset:admin": "node scripts/reset-admin.js",
     "reset:admin:live": "node scripts/reset-admin.js --live",
     "wipe:local": "node scripts/wipe-local-except-admin.js",
