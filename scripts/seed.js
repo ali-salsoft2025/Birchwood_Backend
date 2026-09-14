@@ -75,7 +75,7 @@ async function seed() {
 
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   console.log(`\n======== Seed complete (${seconds}s) ========`);
-  console.log(`Admin: ${process.env.ADMIN_SEED_EMAIL || "admin@thebirchwoodacademy.com"}`);
+  console.log(`Admin: ${process.env.ADMIN_SEED_EMAIL || "admin@thebirchwoodacademy.com"} / ${process.env.ADMIN_SEED_PASSWORD || "Admin@Birchwood1"}`);
   console.log("Teachers: Teacher@12345  |  Parents: Parent@12345  (@birchwood.local)");
   console.log("Images saved under Uploads/");
 }

@@ -384,6 +384,7 @@ async function seedTeachers() {
       if (!classroomRef) {
         teacher.classroom = undefined;
       }
+      teacher.password = DEFAULT_PASSWORD;
       teacher.markModified("education");
       teacher.markModified("employment");
       await teacher.save();
@@ -402,7 +403,11 @@ async function seedTeachers() {
   console.log(`Synced ${linked} homeroom assignments.`);
 
   console.log(`Seeded ${TEACHERS.length} teachers with bios, education, and photos.`);
-  console.log(`Password: ${DEFAULT_PASSWORD}`);
+  console.log("\nTeacher login credentials (shared password):");
+  TEACHERS.forEach((item) => {
+    console.log(`  ${item.firstName} ${item.lastName}  |  ${item.email.toLowerCase()}  |  ${DEFAULT_PASSWORD}  |  ${item.status}`);
+  });
+  console.log(`\nPassword for all teachers: ${DEFAULT_PASSWORD}`);
 }
 
 module.exports = { seedTeachers, TEACHERS };

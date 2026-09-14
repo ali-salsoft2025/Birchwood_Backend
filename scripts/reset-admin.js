@@ -4,7 +4,7 @@ const Admin = require("../Models/Admin");
 const Parent = require("../Models/Parent");
 
 const ADMIN_EMAIL = "admin@thebirchwoodacademy.com";
-const ADMIN_PASSWORD = "Admin@123456";
+const ADMIN_PASSWORD = process.env.ADMIN_SEED_PASSWORD || "Admin@Birchwood1";
 
 async function resetAdmin() {
   if (!process.env.DB) {
