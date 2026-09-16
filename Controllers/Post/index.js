@@ -166,7 +166,6 @@ exports.getAllPosts = async (req, res) => {
     }, {
       $addFields: {
         liked: { $in: [userId, "$likes"] },
-        loved: { $in: [userId, "$loves"] },
       },
     });
 
@@ -440,44 +439,6 @@ exports.likePost = async (req, res) => {
     });
 
     res.status(200).json(ApiResponse({}, "Post Liked Successfully", true));
-  } catch (error) {
-    res.status(500).json(ApiResponse({}, "Internal Server Error", false));
-  }
-};
-
-exports.lovePost = async (req, res) => {
-  const postId = req.params.id;
-  const userId = req.user._id;
-  const { authorType } = req.body;
-
-  try {
-    const post = await Post.findById(postId);
-
-    if (!post) {
-      return res.status(404).json(ApiResponse({}, "Post not found", false));
-    }
-
-    const lovedIndex = post.loves.indexOf(userId);
-    const isIndexExists = lovedIndex !== -1;
-
-    if (isIndexExists) {
-      post.loves.splice(lovedIndex, 1); // Remove userId from loves array
-    } else {
-      post.loves.push(userId); // Add userId to loves array
-    }
-
-    await post.save();
-
-    sendLikeAndLoveNotification({
-      user: req.user,
-      post,
-      authorType,
-      userId,
-      title: isIndexExists ? "Post UnLoved" : "Post Loved",
-      msg: authorType === "teacher" ? "Teacher loved a post you are tagged in" : "Parent loved your post"
-    });
-
-    res.status(200).json(ApiResponse({}, "Post Loved Successfully", true));
   } catch (error) {
     res.status(500).json(ApiResponse({}, "Internal Server Error", false));
   }

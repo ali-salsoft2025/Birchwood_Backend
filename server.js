@@ -78,7 +78,32 @@ const limiter = rateLimit({
 });
 
 app.use("/api", limiter);
-app.use("/Uploads", express.static("./Uploads"));
+app.use(
+  "/Uploads",
+  express.static("./Uploads", {
+    acceptRanges: true,
+    fallthrough: true,
+    setHeaders(res, filePath) {
+      if (/\.(mp4|mov|m4v|webm|avi)$/i.test(filePath)) {
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      }
+    },
+  })
+);
+app.use(
+  "/uploads",
+  express.static("./Uploads", {
+    acceptRanges: true,
+    fallthrough: true,
+    setHeaders(res, filePath) {
+      if (/\.(mp4|mov|m4v|webm|avi)$/i.test(filePath)) {
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      }
+    },
+  })
+);
 app.use("/api", require("./Routes/index"));
 
 app.get("/", (req, res) => {
