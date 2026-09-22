@@ -63,16 +63,6 @@ const postSchema = new mongoose.Schema(
         ref: "teacher",
       },
     ],
-    loves: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "parent",
-      },
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "teacher",
-      },
-    ],
   },
   { timestamps: true }
 );

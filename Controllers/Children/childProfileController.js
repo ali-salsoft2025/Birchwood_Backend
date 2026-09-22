@@ -2,26 +2,77 @@ const Parent = require("../../Models/Parent");
 const Children = require("../../Models/Children");
 const moment = require("moment");
 const { ApiResponse } = require("../../Helpers/index");
-const { errorHandler } = require("../../Helpers/errorHandler");
-const fs = require("fs");
-const path = require("path");
+const { syncChildParentAssignment } = require("../../Helpers/childParentSync");
+const { unlinkUploadedFile } = require("../../Helpers/uploadFiles");
+const { parseStringList } = require("../../Helpers/childHealth");
+
+function commaList(value) {
+  if (Array.isArray(value)) {
+    return parseStringList(value);
+  }
+  if (typeof value !== "string") {
+    return parseStringList(value);
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function lineList(value) {
+  if (Array.isArray(value)) {
+    return parseStringList(value);
+  }
+  if (typeof value !== "string") {
+    return parseStringList(value);
+  }
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function calendarDay(value) {
+  const m = moment(value);
+  if (!m.isValid()) {
+    return "";
+  }
+  const utc = moment.utc(value);
+  if (utc.hours() === 0 && utc.minutes() === 0 && utc.seconds() === 0) {
+    return utc.format("YYYY-MM-DD");
+  }
+  return m.format("YYYY-MM-DD");
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 exports.assignChild = async (req, res) => {
   try {
-    const rollNumber = String(req.body.rollNumber || "").trim();
-    const birthday = req.body.birthday;
+    const rollNumber = String(
+      req.body.rollNumber || req.body.rollNo || "",
+    ).trim();
+    const birthdayRaw = req.body.birthday || req.body.dob;
+    const birthday = moment(
+      birthdayRaw,
+      [moment.ISO_8601, "YYYY-MM-DD", "DD-MM-YYYY", "DD/MM/YYYY", "D MMM YYYY"],
+      true,
+    );
 
     const parent = await Parent.findById(req.user._id);
     if (!parent) {
       return res.status(400).json(ApiResponse({}, "Parent not Found", false));
     }
 
-    const child = await Children.findOne({ rollNumber });
+    const child = await Children.findOne({
+      rollNumber: { $regex: `^${escapeRegex(rollNumber)}$`, $options: "i" },
+    });
     const birthdayMatches =
       child &&
       child.birthday &&
-      moment(birthday).isValid() &&
-      moment(child.birthday).isSame(moment(birthday), "day");
+      birthday.isValid() &&
+      calendarDay(birthday) === calendarDay(child.birthday);
 
     if (!child || !birthdayMatches) {
       return res
@@ -29,129 +80,105 @@ exports.assignChild = async (req, res) => {
         .json(ApiResponse({}, "Child details do not match", false));
     }
 
-    if (child.parent) {
+    if (child.parent && String(child.parent) !== String(parent._id)) {
       return res
         .status(400)
         .json(ApiResponse({}, "Child already has a parent assigned", false));
     }
 
-    if (!parent.childrens.includes(child._id)) {
-      parent.childrens.push(child._id);
+    if (child.parent && String(child.parent) === String(parent._id)) {
+      return res
+        .status(200)
+        .json(ApiResponse({ child }, "Child already linked", true));
     }
+
     child.parent = parent._id;
-
-    await parent.save();
     await child.save();
+    await syncChildParentAssignment(child._id, parent._id, null);
 
+    const linked = await Children.findById(child._id);
     return res
       .status(200)
-      .json(ApiResponse({ child }, "Child assigned successfully", true));
+      .json(ApiResponse({ child: linked }, "Child assigned successfully", true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, error.message, false));
   }
 };
 
-//update user
-// exports.updateProfile = async (req, res) => {
-//   try {
-//     console.log(req.user._id);
-// if (req.body.image) {
-//   let currentUser = await Parent.findById(req.user._id);
+exports.updateChildHealth = async (req, res) => {
+  const uploadedName = req.file ? String(req.body.image || req.file.filename || "") : "";
+  let saved = false;
+  try {
+    const childId = req.body.childId || req.body.child || req.params.id;
+    const child = await Children.findById(childId);
+    if (!child) {
+      if (uploadedName) unlinkUploadedFile(uploadedName);
+      return res.status(404).json(ApiResponse({}, "Child not found", false));
+    }
 
+    if (!child.parent || String(child.parent) !== String(req.user._id)) {
+      if (uploadedName) unlinkUploadedFile(uploadedName);
+      return res.status(403).json(ApiResponse({}, "This is not your child", false));
+    }
 
+    const previousImage = child.image;
+    child.allergies = commaList(req.body.allergies);
+    child.fears = commaList(req.body.fears);
+    child.conditions = commaList(req.body.conditions);
+    child.summary = lineList(req.body.summary);
+    if (uploadedName) {
+      child.image = uploadedName;
+    }
+    await child.save();
+    saved = true;
 
-//   if (currentUser.image) {
-//     const imagePath = path.join('./Uploads', currentUser.image);
+    if (uploadedName && previousImage && previousImage !== uploadedName) {
+      unlinkUploadedFile(previousImage);
+    }
 
-//     // Check if the file exists before attempting to delete it
-//     if (fs.existsSync(imagePath)) {
-//       try {
-//         fs.unlinkSync(imagePath);
-//         console.log('Previous image deleted successfully.');
-//       } catch (err) {
-//         console.error('Error while deleting the previous image:', err);
-//       }
-//     } else {
-//       console.log('Previous image not found in Uploads folder.');
-//     }
-//   }
-// }
+    const updated = await Children.findById(child._id).populate({
+      path: "classroom",
+      populate: { path: "teacher", select: "firstName lastName" },
+    });
 
-//     let user = await Parent.findByIdAndUpdate(req.user._id, req.body, {
-//       new: true,
-//     });
-//     if (!user) {
-//       return res.json(ApiResponse({}, "No user found", false));
-//     }
-//     return res.json(ApiResponse(user, "User updated successfully"));
-//   } catch (error) {
-//     return res.json(ApiResponse({}, error.message, false));
-//   }
-// };
-
-// //change password
-// exports.changePassword = async (req, res) => {
-//   const { old_password, new_password } = req.body;
-
-//   try {
-//     let user = await Parent.findById(req.user._id);
-//     if (!user.authenticate(old_password)) {
-//       return res.json(ApiResponse({}, "Current password is Invalid!", false));
-//     }
-//     if(old_password == new_password){
-//       return res.json(ApiResponse({}, "New password cannot be same as old password!", false));
-
-//     }
-
-//     user.password = new_password;
-//     await user.save();
-
-//     await res
-//       .status(201)
-//       .json(ApiResponse({}, "Password Updated Successfully", true));
-//   } catch (error) {
-//     return res.status(500).json(ApiResponse({}, error.message, false));
-//   }
-// };
-
+    return res
+      .status(200)
+      .json(ApiResponse({ child: updated }, "Student updated", true));
+  } catch (error) {
+    if (uploadedName && !saved) unlinkUploadedFile(uploadedName);
+    return res.status(500).json(ApiResponse({}, error.message, false));
+  }
+};
 
 exports.removeChild = async (req, res) => {
-    try {
-      // Find the child by ID
-      const child = await Children.findById(req.body.child);
-  
-      if (!child) {
-        return res.status(200).json(ApiResponse({}, "Child not Found", true));
-      }
-  
-      // Check if the child has a parent assigned
-      if (!child.parent) {
-        return res.status(400).json(ApiResponse({}, "Child does not have a parent assigned", true));
-      }
-  
-      // Find the parent by ID (req.user._id)
-      const parent = await Parent.findById(req.user._id);
-  
-      // Check if the child is in the parent's childrens array
-      const isChildInParentArray = parent.childrens.includes(child._id);
-  
-      if (!isChildInParentArray) {
-        return res.status(400).json(ApiResponse({}, "This is not your child", true));
-      }
-  
-      // Remove the child from the parent's childrens array
-      parent.childrens = parent.childrens.filter(childId => childId.toString() !== child._id.toString());
-  
-      // Remove the parent from the child's parent field
-      child.parent = null;
-  
-      // Save changes to both parent and child
-      await parent.save();
-      await child.save();
-  
-      return res.status(200).json(ApiResponse({}, "Child removed successfully", true));
-  
-    } catch (error) {
-      return res.status(500).json(ApiResponse({}, error.message, false));
+  try {
+    const child = await Children.findById(req.body.child);
+
+    if (!child) {
+      return res.status(200).json(ApiResponse({}, "Child not Found", true));
     }
-  };
+
+    if (!child.parent) {
+      return res.status(400).json(ApiResponse({}, "Child does not have a parent assigned", true));
+    }
+
+    const parent = await Parent.findById(req.user._id);
+    const isChildInParentArray = parent.childrens.includes(child._id);
+
+    if (!isChildInParentArray) {
+      return res.status(400).json(ApiResponse({}, "This is not your child", true));
+    }
+
+    parent.childrens = parent.childrens.filter(
+      (childId) => childId.toString() !== child._id.toString(),
+    );
+    child.parent = null;
+
+    await parent.save();
+    await child.save();
+
+    return res.status(200).json(ApiResponse({}, "Child removed successfully", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, error.message, false));
+  }
+};

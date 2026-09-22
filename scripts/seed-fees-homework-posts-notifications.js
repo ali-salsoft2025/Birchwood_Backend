@@ -403,7 +403,6 @@ async function seedPosts({ teachers, classrooms, children, activities }) {
       status: "ACTIVE",
       videos: [],
       likes: [],
-      loves: [],
     });
     console.log(`Created post: ${item.content.replace("[Seed] ", "").slice(0, 60)}…`);
   }

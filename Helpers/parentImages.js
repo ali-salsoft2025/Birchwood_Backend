@@ -3,7 +3,7 @@ const { unlinkUploadedFile } = require("./uploadFiles");
 const PARENT_IMAGE_KEYS = ["fatherImage", "motherImage", "image"];
 
 function assignParentImagesFromBody(data = {}) {
-  if (!data.image && data.fatherImage) {
+  if (data.fatherImage) {
     data.image = data.fatherImage;
   }
   return data;
