@@ -6,10 +6,13 @@ const {
   getAllMyChildren,
   getChildProfileById,
 } = require("../../../Controllers/Parent/profileController");
-const { assignChild } = require("../../../Controllers/Children/childProfileController");
+const {
+  assignChild,
+  updateChildHealth,
+} = require("../../../Controllers/Children/childProfileController");
 const router = express.Router();
 const { authenticatedRoute } = require("../../../Middlewares/auth");
-const { uploadParentImages } = require("../../../Middlewares/upload");
+const { uploadFile, uploadParentImages } = require("../../../Middlewares/upload");
 const { changePasswordValidator } = require("../../../Validator/profileValidator");
 const { assignChildValidator } = require("../../../Validator/childValidator");
 
@@ -26,6 +29,12 @@ router.post(
   authenticatedRoute,
   assignChildValidator,
   assignChild
+);
+router.post(
+  "/updateChildHealth",
+  authenticatedRoute,
+  uploadFile,
+  updateChildHealth
 );
 router.get("/getAllMyChildren", authenticatedRoute, getAllMyChildren);
 router.get(

@@ -66,8 +66,22 @@ exports.updateChildValidator = [
 ];
 
 exports.assignChildValidator = [
-  body("rollNumber").not().isEmpty().withMessage("Roll Number is Required"),
-  body("birthday").not().isEmpty().withMessage("Birthday is Required"),
+  body("rollNumber").custom((_, {req}) => {
+    const roll = String(req.body.rollNumber || req.body.rollNo || "").trim();
+    if (!roll) {
+      throw new Error("Roll Number is Required");
+    }
+    req.body.rollNumber = roll;
+    return true;
+  }),
+  body("birthday").custom((_, {req}) => {
+    const raw = req.body.birthday || req.body.dob;
+    if (!raw) {
+      throw new Error("Birthday is Required");
+    }
+    req.body.birthday = raw;
+    return true;
+  }),
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

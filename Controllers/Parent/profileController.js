@@ -42,15 +42,18 @@ exports.updateProfile = async (req, res) => {
       return res.json(ApiResponse({}, "No user found", false));
     }
 
-    replaceParentUploadedImages(currentUser, updates);
-
     const user = await Parent.findByIdAndUpdate(req.user._id, updates, {
       new: true,
     });
     if (!user) {
       return res.json(ApiResponse({}, "No user found", false));
     }
-    return res.json(ApiResponse(sanitizeUser(user), "User updated successfully"));
+
+    replaceParentUploadedImages(currentUser, updates);
+
+    return res.json(
+      ApiResponse(sanitizeUser(user), "User updated successfully", true)
+    );
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
   }

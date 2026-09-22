@@ -345,6 +345,10 @@ exports.sendMessage = async (req, res) => {
       return res.json(ApiResponse({}, "Message body is required", false));
     }
 
+    if (ticket.status === "CLOSED") {
+      return res.json(ApiResponse({}, "This ticket is closed", false));
+    }
+
     const role = getRequestRole(req);
     const isInternal = role === "ADMIN" && Boolean(req.body.isInternal);
 
@@ -361,9 +365,12 @@ exports.sendMessage = async (req, res) => {
 
     if (role === "ADMIN") {
       if (!isInternal) ticket.participantUnreadCount += 1;
+      if (ticket.status === "RESOLVED") ticket.status = "IN_PROGRESS";
     } else {
       ticket.adminUnreadCount += 1;
-      if (ticket.status === "WAITING") ticket.status = "OPEN";
+      if (ticket.status === "WAITING" || ticket.status === "RESOLVED") {
+        ticket.status = "OPEN";
+      }
     }
 
     await ticket.save();
