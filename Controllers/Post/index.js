@@ -550,6 +550,115 @@ exports.getAllPostComments = async (req, res) => {
   }
 };
 
+exports.getPostLikes = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id).select("likes").lean();
+    if (!post) {
+      return res.json(ApiResponse({}, "Post not found", false));
+    }
+
+    const ids = (post.likes || []).map((id) => String(id));
+    if (!ids.length) {
+      return res.json(ApiResponse({ docs: [], totalDocs: 0 }, "", true));
+    }
+
+    const objectIds = ids
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    const Teacher = require("../../Models/Teacher");
+    const Parent = require("../../Models/Parent");
+
+    const [teachers, parents] = await Promise.all([
+      Teacher.find({ _id: { $in: objectIds } })
+        .select("_id firstName lastName image")
+        .lean(),
+      Parent.find({ _id: { $in: objectIds } })
+        .select("_id firstName lastName motherFirstName motherLastName fatherFirstName fatherLastName image")
+        .lean(),
+    ]);
+
+    const byId = new Map();
+    teachers.forEach((item) => {
+      byId.set(String(item._id), {
+        _id: item._id,
+        role: "teacher",
+        firstName: item.firstName,
+        lastName: item.lastName,
+        image: item.image,
+      });
+    });
+    parents.forEach((item) => {
+      byId.set(String(item._id), {
+        _id: item._id,
+        role: "parent",
+        firstName: item.motherFirstName || item.fatherFirstName || item.firstName,
+        lastName: item.motherLastName || item.fatherLastName || item.lastName,
+        motherFirstName: item.motherFirstName,
+        motherLastName: item.motherLastName,
+        image: item.image,
+      });
+    });
+
+    const docs = ids
+      .map((id) => byId.get(id) || { _id: id, role: "unknown", firstName: "Unknown", lastName: "user" })
+      .filter(Boolean);
+
+    return res.json(ApiResponse({ docs, totalDocs: docs.length }, "", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.deleteComment = async (req, res) => {
+  try {
+    if (!req.isAdmin && req.userRole !== "teacher" && req.userRole !== "parent") {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+
+    const comment = await Comment.findById(req.params.id);
+    if (!comment) {
+      return res.json(ApiResponse({}, "Comment not found", false));
+    }
+
+    if (!req.isAdmin) {
+      if (String(comment.author) !== String(req.user._id)) {
+        return res.status(403).json(ApiResponse({}, "You can only delete your own comment", false));
+      }
+    }
+
+    await comment.deleteOne();
+    return res.json(ApiResponse({}, "Comment deleted", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.removePostLike = async (req, res) => {
+  try {
+    if (!req.isAdmin) {
+      return res.status(403).json(ApiResponse({}, "Only admin can remove likes", false));
+    }
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.json(ApiResponse({}, "Post not found", false));
+    }
+    const userId = req.body?.userId || req.params.userId;
+    if (!userId) {
+      return res.status(400).json(ApiResponse({}, "userId is required", false));
+    }
+    const before = post.likes.length;
+    post.likes = (post.likes || []).filter((id) => String(id) !== String(userId));
+    if (post.likes.length === before) {
+      return res.json(ApiResponse({}, "Like not found on this post", false));
+    }
+    await post.save();
+    return res.json(ApiResponse({ likesCount: post.likes.length }, "Like removed", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
 exports.getPostById = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id).populate([
@@ -563,7 +672,12 @@ exports.getPostById = async (req, res) => {
       return res.json(ApiResponse({}, "Post not found", false));
     }
 
-    return res.json(ApiResponse({ post }, "", true));
+    const commentsCount = await Comment.countDocuments({ post: post._id });
+    const payload = post.toObject();
+    payload.commentsCount = commentsCount;
+    payload.likesCount = Array.isArray(payload.likes) ? payload.likes.length : 0;
+
+    return res.json(ApiResponse({ post: payload }, "", true));
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
   }

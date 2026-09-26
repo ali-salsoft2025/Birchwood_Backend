@@ -24,6 +24,12 @@ router.use("/homework", require("./Homework"));
 router.use("/notification", require("./Notification"));
 router.use("/support", require("./Support"));
 router.use("/advertisement", require("./Advertisement"));
+router.use("/gallery", require("./Gallery"));
+router.use("/result", require("./Result"));
+router.use("/settings", require("./Settings"));
+router.use("/chat", require("./Chat"));
+router.use("/message", require("./Message"));
+router.use("/assessment", require("./Assessment"));
 
 router.use("/admin/auth", require("./Admin/AdminAuth"));
 router.use("/admin/teacher", require("./Admin/AdminTeacher"));

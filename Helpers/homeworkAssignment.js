@@ -162,6 +162,27 @@ function homeworkLookupStages() {
       },
     },
     { $unwind: { path: "$classroomDoc", preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        teacherName: {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ["$teacherDoc.firstName", ""] },
+                " ",
+                { $ifNull: ["$teacherDoc.lastName", ""] },
+              ],
+            },
+          },
+        },
+        classroomName: { $ifNull: ["$classroomDoc.classroomName", ""] },
+        teacherDoc: {
+          _id: "$teacherDoc._id",
+          firstName: "$teacherDoc.firstName",
+          lastName: "$teacherDoc.lastName",
+        },
+      },
+    },
   ];
 }
 

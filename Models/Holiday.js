@@ -22,6 +22,18 @@ const holidaySchema = new Schema(
       enum: ["STUDENT", "TEACHER", "BOTH"],
       default: "BOTH",
     },
+    type: {
+      type: String,
+      enum: ["HOLIDAY", "EVENT"],
+      default: "HOLIDAY",
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+    },
+    createdByRole: {
+      type: String,
+      enum: ["admin", "teacher"],
+    },
   },
   { timestamps: true }
 );

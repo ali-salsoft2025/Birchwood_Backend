@@ -4,10 +4,12 @@ const {
   getUnreadAdminNotifications,
   getNotificationDetail,
   createAlertOrAnnoucement,
+  sendUserNotification,
   updateNotification,
   markAsRead,
   markAllAsRead,
   deleteNotification,
+  deleteUserNotification,
   getUserNotifications,
   getUnreadUserNotifications,
 } = require("../../Controllers/Notification");
@@ -21,9 +23,12 @@ router.get("/getUserNotifications", authenticatedRoute, getUserNotifications);
 router.get("/getUnreadUserNotifications", authenticatedRoute, getUnreadUserNotifications);
 router.get("/notificationDetail/:id", adminRoute, getNotificationDetail);
 router.post("/createAlertOrAnnoucement", adminRoute, createAlertOrAnnoucement);
+router.post("/sendUserNotification", adminRoute, sendUserNotification);
 router.post("/updateNotification/:id", adminRoute, updateNotification);
 router.post("/markAsRead/:id", authenticatedRoute, markAsRead);
 router.post("/markAllAsRead", adminRoute, markAllAsRead);
+router.post("/deleteNotification/:id", adminRoute, deleteNotification);
 router.get("/deleteNotification/:id", adminRoute, deleteNotification);
+router.post("/deleteUserNotification/:id", authenticatedRoute, deleteUserNotification);
 
 module.exports = router;

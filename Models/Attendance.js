@@ -22,7 +22,23 @@ const attendanceSchema = new Schema(
       type: Date,
       default: new Date(),
     },
+    checkOut: {
+      type: Date,
+      default: null,
+    },
     leaveReason: {
+      type: String,
+      default: "",
+    },
+    late: {
+      type: Boolean,
+      default: false,
+    },
+    earlyPickup: {
+      type: Boolean,
+      default: false,
+    },
+    pickupReason: {
       type: String,
       default: "",
     },

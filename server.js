@@ -112,6 +112,8 @@ app.get("/", (req, res) => {
 
 const { initSocket } = require("./config/socket");
 
+require("./config/cronjob");
+
 const server = http.createServer(app);
 initSocket(server);
 

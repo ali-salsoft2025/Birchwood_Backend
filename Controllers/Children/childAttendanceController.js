@@ -22,63 +22,137 @@ const {
 } = require("../../Helpers/verification");
 const mongoose = require("mongoose");
 const Teacher = require("../../Models/Teacher");
+const {
+  childDayView,
+  isSchoolWeekday,
+  schoolDayBounds,
+  attendanceWindow,
+  scheduleLabels,
+} = require("../../Helpers/schoolDay");
+
+function ownsChild(req, child) {
+  if (req.userRole !== "parent") return true;
+  return child?.parent && String(child.parent) === String(req.user._id);
+}
+
+async function attendanceForSchoolDay(childId, date = new Date()) {
+  const { start, end } = schoolDayBounds(date);
+  return Attendance.findOne({
+    children: childId,
+    checkIn: { $gte: start, $lte: end },
+  });
+}
 
 exports.markCheckIn = async (req, res) => {
   try {
-    let { checkIn, children, markedBy } = req.body;
+    const { children, markedBy } = req.body;
+    const now = new Date();
 
-    // Ensure checkIn is treated as UTC
-    const startDate = moment.utc(checkIn).startOf("day");
-    const endDate = moment.utc(checkIn).endOf("day");
+    if (!isSchoolWeekday(now)) {
+      return res.status(400).json(ApiResponse({}, "Check-in is only needed on school days", false));
+    }
 
-    // Fetch the child with populated classroom
-    let currentChild = await Children.findById(children).populate("classroom");
+    const window = attendanceWindow(now);
+    if (!window.checkInOpen) {
+      const { checkInOpensLabel } = scheduleLabels();
+      return res.status(400).json(ApiResponse({}, `Check-in opens at ${checkInOpensLabel}`, false));
+    }
 
+    const currentChild = await Children.findById(children).populate("classroom");
     if (!currentChild) {
       return res.status(404).json(ApiResponse({}, "Child Not Found", false));
     }
-
-    let teacher = currentChild.classroom?.teacher;
-    let parent = currentChild.parent;
-
-    // Ensure check-in date is today's date in UTC
-    const today = moment.utc().startOf("day");
-    const attendanceDate = moment.utc(checkIn).startOf("day");
-
-    if (!attendanceDate.isSame(today, "day")) {
-      return res.status(400).json(ApiResponse({}, "Attendance Date should be today", false));
+    if (!ownsChild(req, currentChild)) {
+      return res.status(403).json(ApiResponse({}, "Access Forbidden", false));
     }
 
-    // Check if attendance already exists for today
-    let existingAttendance = await Attendance.findOne({
-      children,
-      checkIn: {
-        $gte: startDate.toDate(),
-        $lte: endDate.toDate(),
-      },
-    });
+    const teacher = currentChild.classroom?.teacher;
+    const parent = currentChild.parent;
+    let attendance = await attendanceForSchoolDay(children, now);
 
-    if (existingAttendance) {
-      return res.status(400).json(ApiResponse({}, "Check-in Already Marked", false));
+    if (attendance?.status === "PRESENT") {
+      return res.status(200).json(ApiResponse({
+        newAttendance: attendance,
+        ...childDayView(attendance, now),
+      }, "Check-in already marked", true));
     }
 
-    // Create new attendance record
-    const newAttendance = new Attendance({
-      children,
-      checkIn,
-      markedBy,
-      status: "PRESENT",
-    });
-    await newAttendance.save();
+    if (attendance) {
+      attendance.status = "PRESENT";
+      attendance.checkIn = now;
+      attendance.markedBy = markedBy;
+      attendance.leaveReason = "";
+      attendance.checkOut = null;
+      attendance.late = window.late;
+      attendance.earlyPickup = false;
+      attendance.pickupReason = "";
+      await attendance.save();
+    } else {
+      attendance = await Attendance.create({
+        children,
+        checkIn: now,
+        markedBy,
+        status: "PRESENT",
+        late: window.late,
+        classroom: currentChild.classroom?._id || currentChild.classroom,
+      });
+    }
 
-    // Update child's check-in status
     currentChild.checkIn = true;
     await currentChild.save();
+    childCheckinNotification(markedBy === "PARENT" ? teacher : parent, currentChild, attendance);
 
-    // Send notification
-    childCheckinNotification(markedBy === "PARENT" ? teacher : parent, currentChild, newAttendance);
+    return res.status(200).json(ApiResponse({
+      newAttendance: attendance,
+      ...childDayView(attendance, now),
+    }, "Check-in Marked Successfully", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, errorHandler(error) || error.message, false));
+  }
+};
 
-    return res.status(200).json(ApiResponse({newAttendance}, "Check-in Marked Successfully", true));
+exports.markCheckOut = async (req, res) => {
+  try {
+    const { children, markedBy, pickupReason } = req.body;
+    const now = new Date();
+    const reason = String(pickupReason || "").trim();
+
+    if (!isSchoolWeekday(now)) {
+      return res.status(400).json(ApiResponse({}, "Pickup is only needed on school days", false));
+    }
+
+    const currentChild = await Children.findById(children);
+    if (!currentChild) {
+      return res.status(404).json(ApiResponse({}, "Child Not Found", false));
+    }
+    if (!ownsChild(req, currentChild)) {
+      return res.status(403).json(ApiResponse({}, "Access Forbidden", false));
+    }
+
+    const attendance = await attendanceForSchoolDay(children, now);
+    if (!attendance || attendance.status !== "PRESENT") {
+      return res.status(400).json(ApiResponse({}, "Check in this child before marking pickup", false));
+    }
+
+    if (!attendance.checkOut) {
+      const window = attendanceWindow(now);
+      if (!window.pickupOpen && !reason) {
+        const { pickupOpensLabel } = scheduleLabels();
+        return res.status(400).json(
+          ApiResponse({}, `Add a reason for pickup before ${pickupOpensLabel}`, false)
+        );
+      }
+      attendance.checkOut = now;
+      attendance.earlyPickup = !window.pickupOpen;
+      attendance.pickupReason = window.pickupOpen ? "" : reason;
+      if (markedBy) attendance.markedBy = markedBy;
+      await attendance.save();
+    }
+
+    return res.status(200).json(ApiResponse({
+      newAttendance: attendance,
+      ...childDayView(attendance, now),
+    }, "Pickup marked", true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, errorHandler(error) || error.message, false));
   }
@@ -98,16 +172,25 @@ exports.markLeave = async (req, res) => {
     if (!currentChild) {
       return res.status(404).json(ApiResponse({}, "Child not found", false));
     }
+    if (!ownsChild(req, currentChild)) {
+      return res.status(403).json(ApiResponse({}, "Access Forbidden", false));
+    }
 
     let teacher = currentChild.classroom?.teacher;
     let parent = currentChild.parent;
 
-    // Check if an attendance record exists for this date
+    const leaveMoment = moment.utc(checkIn);
+    const schoolToday = schoolDayBounds(new Date());
+    const isToday = leaveMoment.toDate() >= schoolToday.start && leaveMoment.toDate() <= schoolToday.end;
+    const dayWindow = isToday
+      ? schoolToday
+      : { start: startDate.toDate(), end: endDate.toDate() };
+
     let existingAttendance = await Attendance.findOne({
       children,
       checkIn: {
-        $gte: startDate.toDate(),
-        $lte: endDate.toDate(),
+        $gte: dayWindow.start,
+        $lte: dayWindow.end,
       },
     });
 
@@ -120,6 +203,10 @@ exports.markLeave = async (req, res) => {
       // Update existing attendance record
       existingAttendance.leaveReason = leaveReason;
       existingAttendance.status = "LEAVE";
+      if (isToday) {
+        existingAttendance.checkIn = new Date();
+        existingAttendance.checkOut = null;
+      }
       await existingAttendance.save();
       attendanceRecord = existingAttendance;
     } else {
@@ -134,9 +221,9 @@ exports.markLeave = async (req, res) => {
       await attendanceRecord.save();
     }
 
-    if (moment.utc(checkIn).isSame(today, "day")) {
+    if (isToday) {
       todayAttendance = attendanceRecord;
-      currentChild.checkIn = true;
+      currentChild.checkIn = false;
       await currentChild.save();
     }
 

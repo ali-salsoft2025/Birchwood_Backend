@@ -1,6 +1,7 @@
 const SOCKET_EVENTS = {
   NOTIFICATION_NEW: "notification:new",
   NOTIFICATION_READ: "notification:read",
+  NOTIFICATION_DELETED: "notification:deleted",
   CONNECTED: "connected",
   SUPPORT_TICKET_NEW: "support:ticket:new",
   SUPPORT_TICKET_UPDATED: "support:ticket:updated",
@@ -66,6 +67,11 @@ function emitUserNotificationRead(userId, payload) {
   emitToUser(userId, SOCKET_EVENTS.NOTIFICATION_READ, normalized);
 }
 
+function emitUserNotificationDeleted(userId, payload) {
+  if (!userId || !payload) return;
+  emitToUser(userId, SOCKET_EVENTS.NOTIFICATION_DELETED, payload);
+}
+
 function emitSupportTicketNew(payload) {
   emitToAdmin(SOCKET_EVENTS.SUPPORT_TICKET_NEW, payload);
   const participantId = payload?.ticket?.participant;
@@ -108,6 +114,7 @@ module.exports = {
   emitUserNotification,
   emitAdminNotificationRead,
   emitUserNotificationRead,
+  emitUserNotificationDeleted,
   emitSupportTicketNew,
   emitSupportTicketUpdated,
   emitSupportMessage,

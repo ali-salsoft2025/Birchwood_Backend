@@ -21,6 +21,44 @@ const STATUSES = ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"];
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
 const CATEGORIES = ["GENERAL", "FEES", "HOMEWORK", "ATTENDANCE", "OTHER"];
 
+const STATUS_LABELS = {
+  OPEN: "Open",
+  IN_PROGRESS: "In progress",
+  WAITING: "Waiting",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+};
+
+const PRIORITY_LABELS = {
+  LOW: "Low",
+  NORMAL: "Normal",
+  HIGH: "High",
+  URGENT: "Urgent",
+};
+
+async function recordTicketEvent(ticket, req, { eventType, body, eventMeta = {} }) {
+  const sender = await resolveSenderSnapshot(req);
+  if (!sender) return null;
+
+  const message = await SupportMessage.create({
+    ticket: ticket._id,
+    ...sender,
+    body,
+    isInternal: true,
+    kind: "EVENT",
+    eventType,
+    eventMeta,
+  });
+
+  emitSupportMessage({
+    ticketId: String(ticket._id),
+    ticket: normalizeTicket(ticket.toObject(), req),
+    message,
+  });
+
+  return message;
+}
+
 function normalizeTicket(ticket, req) {
   if (!ticket) return ticket;
   const role = getRequestRole(req);
@@ -206,8 +244,34 @@ exports.getAllTickets = async (req, res) => {
         },
       },
       {
+        $lookup: {
+          from: "admins",
+          localField: "assignedAdmin",
+          foreignField: "_id",
+          as: "assignedAdminDoc",
+          pipeline: [{ $project: { firstName: 1, lastName: 1 } }],
+        },
+      },
+      {
+        $addFields: {
+          assignedAdmin: {
+            $let: {
+              vars: { row: { $arrayElemAt: ["$assignedAdminDoc", 0] } },
+              in: {
+                $cond: [
+                  { $ifNull: ["$$row", false] },
+                  { _id: "$$row._id", firstName: "$$row.firstName", lastName: "$$row.lastName" },
+                  "$assignedAdmin",
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
         $project: {
           participantTeacherDoc: 0,
+          assignedAdminDoc: 0,
           participantParentDoc: 0,
         },
       }
@@ -267,6 +331,9 @@ exports.updateTicket = async (req, res) => {
     }
 
     const role = getRequestRole(req);
+    const previousStatus = ticket.status;
+    const previousPriority = ticket.priority;
+    const previousAssignee = ticket.assignedAdmin ? String(ticket.assignedAdmin) : "";
 
     if (req.body.status && STATUSES.includes(String(req.body.status).toUpperCase())) {
       if (role !== "ADMIN" && !["RESOLVED", "CLOSED"].includes(String(req.body.status).toUpperCase())) {
@@ -285,9 +352,42 @@ exports.updateTicket = async (req, res) => {
       if (req.body.assignedAdmin) {
         ticket.assignedAdmin = req.body.assignedAdmin;
       }
+      if (req.body.takeOver) {
+        ticket.assignedAdmin = req.user._id;
+        if (ticket.status === "OPEN") ticket.status = "IN_PROGRESS";
+      }
     }
 
     await ticket.save();
+
+    if (role === "ADMIN") {
+      const sender = await resolveSenderSnapshot(req);
+      const actor = sender?.senderName || "Admin";
+      const assignee = ticket.assignedAdmin ? String(ticket.assignedAdmin) : "";
+
+      if (req.body.takeOver && assignee && assignee !== previousAssignee) {
+        await recordTicketEvent(ticket, req, {
+          eventType: "TAKEOVER",
+          body: `${actor} has connected to take over ticket`,
+        });
+      }
+
+      if (ticket.priority !== previousPriority) {
+        await recordTicketEvent(ticket, req, {
+          eventType: "PRIORITY",
+          body: `${actor} changed priority to ${PRIORITY_LABELS[ticket.priority] || ticket.priority}`,
+          eventMeta: { priority: ticket.priority },
+        });
+      }
+
+      if (ticket.status !== previousStatus) {
+        await recordTicketEvent(ticket, req, {
+          eventType: "STATUS",
+          body: `${actor} changed status to ${STATUS_LABELS[ticket.status] || ticket.status}`,
+          eventMeta: { status: ticket.status },
+        });
+      }
+    }
 
     const payload = { ticket: normalizeTicket(ticket.toObject(), req) };
     emitSupportTicketUpdated(payload);
@@ -446,6 +546,38 @@ exports.verifyTicketAccess = async (req, res) => {
       return res.status(403).json(ApiResponse({}, "Access denied", false));
     }
     return res.json(ApiResponse({ allowed: true, ticketId: String(ticket._id) }, "", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.deleteTicket = async (req, res) => {
+  try {
+    const ticket = await SupportTicket.findById(req.params.id);
+    if (!ticket) {
+      return res.json(ApiResponse({}, "Ticket not found", false));
+    }
+
+    if (!canAccessTicket(req, ticket)) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+
+    if (ticket.status !== "CLOSED") {
+      return res.json(ApiResponse({}, "Only closed tickets can be deleted", false));
+    }
+
+    const snapshot = ticket.toObject();
+    await SupportMessage.deleteMany({ ticket: ticket._id });
+    await ticket.deleteOne();
+
+    emitSupportTicketUpdated({
+      ticket: { ...normalizeTicket(snapshot, req), deleted: true },
+      deleted: true,
+    });
+
+    return res.json(
+      ApiResponse({ ticketId: String(snapshot._id), deleted: true }, "Ticket deleted", true)
+    );
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
   }
