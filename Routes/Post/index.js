@@ -1,5 +1,5 @@
 const express = require("express")
-const {addPost,getAllPosts,getAllClassPosts,getAllChildPosts,getPostById,likePost,updatePost,commentPost,getAllPostComments,deletePost} = require("../../Controllers/Post")
+const {addPost,getAllPosts,getAllClassPosts,getAllChildPosts,getPostById,likePost,updatePost,commentPost,getAllPostComments,getPostLikes,deleteComment,removePostLike,deletePost} = require("../../Controllers/Post")
 const router = express.Router()
 const { authenticatedRoute,adminRoute } = require("../../Middlewares/auth")
 const {uploadMultiple} = require("../../Middlewares/upload")
@@ -16,4 +16,7 @@ router.get("/deletePost/:id", authenticatedRoute, deletePost);
 router.post("/likePost/:id", authenticatedRoute, likePost);
 router.post("/commentPost/:id", authenticatedRoute,commentPostValidator, commentPost);
 router.get("/getAllPostComments/:id", authenticatedRoute, getAllPostComments);
+router.get("/getPostLikes/:id", authenticatedRoute, getPostLikes);
+router.get("/deleteComment/:id", authenticatedRoute, deleteComment);
+router.post("/removeLike/:id", adminRoute, removePostLike);
 module.exports = router

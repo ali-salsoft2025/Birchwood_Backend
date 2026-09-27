@@ -4,6 +4,7 @@ const {
   getAllTickets,
   getTicketById,
   updateTicket,
+  deleteTicket,
   getTicketMessages,
   sendMessage,
   markTicketRead,
@@ -19,6 +20,7 @@ router.get("/getAllTickets", authenticatedRoute, getAllTickets);
 router.get("/getUnreadTicketCount", authenticatedRoute, getUnreadTicketCount);
 router.get("/getTicketById/:id", authenticatedRoute, getTicketById);
 router.post("/updateTicket/:id", authenticatedRoute, updateTicket);
+router.delete("/deleteTicket/:id", authenticatedRoute, deleteTicket);
 router.get("/getTicketMessages/:id", authenticatedRoute, getTicketMessages);
 router.post("/sendMessage/:id", authenticatedRoute, sendMessage);
 router.post("/markTicketRead/:id", authenticatedRoute, markTicketRead);

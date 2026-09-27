@@ -5,6 +5,7 @@ const { ApiResponse } = require("../../Helpers/index");
 const { errorHandler } = require("../../Helpers/errorHandler");
 
 const AUDIENCES = ["STUDENT", "TEACHER", "BOTH"];
+const TYPES = ["HOLIDAY", "EVENT"];
 
 function parseDate(value, label) {
   if (!value) return null;
@@ -27,11 +28,15 @@ function normalizeHolidayPayload(body = {}) {
   }
 
   const audience = AUDIENCES.includes(body.audience) ? body.audience : "BOTH";
+  const type = TYPES.includes(String(body.type || "").toUpperCase())
+    ? String(body.type).toUpperCase()
+    : "HOLIDAY";
 
   const payload = {
     name: String(body.name || "").trim(),
     date: start,
     audience,
+    type,
     endDate: undefined,
   };
 
@@ -50,6 +55,8 @@ function normalizeHolidayPayload(body = {}) {
 exports.addHoliday = async (req, res) => {
   try {
     const payload = normalizeHolidayPayload(req.body);
+    payload.createdBy = req.user?._id;
+    payload.createdByRole = req.userRole === "teacher" ? "teacher" : "admin";
     const newHoliday = new Holiday(payload);
     await newHoliday.save();
 
@@ -68,7 +75,8 @@ exports.addHoliday = async (req, res) => {
 // Get All Holidays
 exports.getAllHolidays = async (req, res) => {
   try {
-    const holidays = await Holiday.find();
+    const holidays = await Holiday.find().sort({ date: 1 });
+    res.set("Cache-Control", "no-store");
 
     return res.json(ApiResponse({ holidays }, "", true));
   } catch (error) {
@@ -84,10 +92,15 @@ exports.updateHoliday = async (req, res) => {
       return res.json(ApiResponse({}, "No holiday found", false));
     }
 
+    if (req.userRole === "teacher" && String(holiday.createdBy || "") !== String(req.user?._id || "")) {
+      return res.status(403).json(ApiResponse({}, "You can only edit events you added", false));
+    }
+
     const payload = normalizeHolidayPayload(req.body);
     holiday.name = payload.name;
     holiday.date = payload.date;
     holiday.audience = payload.audience;
+    holiday.type = payload.type;
     holiday.endDate = payload.endDate;
     await holiday.save();
 
@@ -102,13 +115,19 @@ exports.updateHoliday = async (req, res) => {
 // Delete Holiday
 exports.deleteHoliday = async (req, res) => {
   try {
-    const holiday = await Holiday.findByIdAndRemove(req.params.id);
+    const holiday = await Holiday.findById(req.params.id);
 
     if (!holiday) {
       return res.json(ApiResponse({}, "Holiday not found", false));
     }
 
-    return res.json(ApiResponse({}, "Holiday Deleted Successfully", true));
+    if (req.userRole === "teacher" && String(holiday.createdBy || "") !== String(req.user?._id || "")) {
+      return res.status(403).json(ApiResponse({}, "You can only delete events you added", false));
+    }
+
+    await holiday.deleteOne();
+
+    return res.json(ApiResponse({}, "Deleted successfully", true));
   } catch (error) {
     return res.json(
       ApiResponse(

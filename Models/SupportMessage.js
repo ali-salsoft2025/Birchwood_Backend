@@ -22,6 +22,10 @@ const supportMessageSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    senderImage: {
+      type: String,
+      default: "",
+    },
     body: {
       type: String,
       required: true,
@@ -30,6 +34,19 @@ const supportMessageSchema = new mongoose.Schema(
     isInternal: {
       type: Boolean,
       default: false,
+    },
+    kind: {
+      type: String,
+      enum: ["MESSAGE", "EVENT"],
+      default: "MESSAGE",
+    },
+    eventType: {
+      type: String,
+      enum: ["TAKEOVER", "PRIORITY", "STATUS"],
+    },
+    eventMeta: {
+      priority: { type: String, default: "" },
+      status: { type: String, default: "" },
     },
   },
   { timestamps: true }

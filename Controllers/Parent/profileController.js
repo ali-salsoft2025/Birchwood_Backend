@@ -86,6 +86,8 @@ exports.changePassword = async (req, res) => {
 
 exports.getAllMyChildren = async (req, res) => {
   try {
+    const Attendance = require("../../Models/Attendance");
+    const { schoolDayBounds, childDayView } = require("../../Helpers/schoolDay");
     const parent = await Parent.findById(req.user._id).populate({
       path: "childrens",
       populate: {
@@ -98,9 +100,25 @@ exports.getAllMyChildren = async (req, res) => {
       return res.status(400).json(ApiResponse({}, "Parent not Found", false));
     }
 
+    const now = new Date();
+    const { start, end } = schoolDayBounds(now);
+    const ids = (parent.childrens || []).map((child) => child._id);
+    const records = ids.length
+      ? await Attendance.find({
+          children: { $in: ids },
+          checkIn: { $gte: start, $lte: end },
+        }).lean()
+      : [];
+    const byChild = new Map(records.map((record) => [String(record.children), record]));
+    const children = (parent.childrens || []).map((child) => {
+      const plain = child.toObject ? child.toObject() : child;
+      const record = byChild.get(String(plain._id)) || null;
+      return { ...plain, ...childDayView(record, now) };
+    });
+
     return res
       .status(200)
-      .json(ApiResponse({ children: parent.childrens }, "Children found", true));
+      .json(ApiResponse({ children }, "Children found", true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, error.message, false));
   }

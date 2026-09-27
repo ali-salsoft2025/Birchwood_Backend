@@ -6,12 +6,13 @@ const Parent = require("../../Models/Parent");
 const Attendance = require("../../Models/Attendance");
 const TeacherAttendance = require("../../Models/TeacherAttendance");
 const Holiday = require("../../Models/Holiday");
-const Homework = require("../../Models/Homework");
 const { ApiResponse } = require("../../Helpers/index");
 const { errorHandler } = require("../../Helpers/errorHandler");
 
 const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const OVERVIEW_RANGES = ["thisWeek", "lastWeek", "thisMonth", "lastMonth"];
+const EVENT_COLOR = "#fc7a3a";
+const HOLIDAY_COLOR = "#5b4aa8";
 
 const startOfDay = (date) => {
   const next = new Date(date);
@@ -36,6 +37,79 @@ const startOfWeekMonday = (date) => {
 const mongoDowToMonIndex = (dow) => (dow === 1 ? 6 : dow - 2);
 
 const sum = (values) => values.reduce((total, value) => total + Number(value || 0), 0);
+
+function ymd(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function holidayStart(item) {
+  return startOfDay(new Date(item.date));
+}
+
+function holidayEnd(item) {
+  return startOfDay(new Date(item.endDate || item.date));
+}
+
+function isEvent(item) {
+  return String(item?.type || "HOLIDAY").toUpperCase() === "EVENT";
+}
+
+function serializeHoliday(item) {
+  const start = holidayStart(item);
+  const end = holidayEnd(item);
+  return {
+    _id: String(item._id),
+    name: item.name || (isEvent(item) ? "Event" : "Holiday"),
+    type: isEvent(item) ? "EVENT" : "HOLIDAY",
+    audience: item.audience || "BOTH",
+    date: start.toISOString(),
+    endDate: end.toISOString(),
+    startDay: start.getDate(),
+    endDay: end.getDate(),
+    color: isEvent(item) ? EVENT_COLOR : HOLIDAY_COLOR,
+  };
+}
+
+/** Holidays/events that overlap any day in [monthStart, monthEnd]. */
+function monthOverlapMatch(monthStart, monthEnd) {
+  return {
+    $or: [
+      { date: { $gte: monthStart, $lte: monthEnd } },
+      { endDate: { $gte: monthStart, $lte: monthEnd } },
+      {
+        date: { $lte: monthStart },
+        endDate: { $gte: monthEnd },
+      },
+    ],
+  };
+}
+
+function buildCalendarMarks(holidays, monthStart, monthEnd) {
+  const marks = [];
+  holidays.forEach((item) => {
+    const start = holidayStart(item);
+    const end = holidayEnd(item);
+    const type = isEvent(item) ? "event" : "holiday";
+    const color = isEvent(item) ? EVENT_COLOR : HOLIDAY_COLOR;
+    const cursor = new Date(Math.max(start.getTime(), monthStart.getTime()));
+    const last = new Date(Math.min(end.getTime(), startOfDay(monthEnd).getTime()));
+    while (cursor <= last) {
+      marks.push({
+        day: cursor.getDate(),
+        date: ymd(cursor),
+        type,
+        label: item.name,
+        color,
+        id: String(item._id),
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+  return marks;
+}
 
 async function weeklyCounts(weekStart, model, dateField, extraMatch = {}) {
   const weekEnd = endOfDay(new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000));
@@ -81,32 +155,41 @@ async function statusBreakdown(model, rangeStart, rangeEnd, dateField = "checkIn
   return { ...stats, tracked, rate, total: tracked + stats.HOLIDAY };
 }
 
-function ymd(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function getOverviewWindow(range, now) {
   if (range === "lastWeek") {
     const start = startOfWeekMonday(now);
     start.setDate(start.getDate() - 7);
-    return { start, end: endOfDay(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)), mode: "week" };
+    return {
+      start,
+      end: endOfDay(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)),
+      mode: "week",
+    };
   }
 
   if (range === "thisMonth") {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { start, end: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)), mode: "month" };
+    return {
+      start,
+      end: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      mode: "month",
+    };
   }
 
   if (range === "lastMonth") {
     const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return { start, end: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)), mode: "month" };
+    return {
+      start,
+      end: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)),
+      mode: "month",
+    };
   }
 
   const start = startOfWeekMonday(now);
-  return { start, end: endOfDay(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)), mode: "week" };
+  return {
+    start,
+    end: endOfDay(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)),
+    mode: "week",
+  };
 }
 
 async function dailyPresentCounts(rangeStart, rangeEnd, model) {
@@ -200,8 +283,8 @@ exports.getOverview = async (req, res) => {
       teacherWeekAbsent,
       studentOverview,
       teacherOverview,
-      holidays,
-      homework,
+      monthHolidays,
+      upcomingHolidays,
     ] = await Promise.all([
       Children.countDocuments({ status: { $ne: "INACTIVE" } }),
       Teacher.countDocuments({ status: "ACTIVE" }),
@@ -220,31 +303,18 @@ exports.getOverview = async (req, res) => {
       weeklyCounts(thisWeekStart, TeacherAttendance, "checkIn", { status: "ABSENT" }),
       overviewSeries(overviewWindow, Attendance),
       overviewSeries(overviewWindow, TeacherAttendance),
-      Holiday.find({ date: { $gte: monthStart, $lte: monthEnd } }).lean(),
-      Homework.find({
-        dueDate: { $gte: monthStart, $lte: monthEnd },
-        status: { $ne: "INACTIVE" },
-      }).lean(),
+      Holiday.find(monthOverlapMatch(monthStart, monthEnd)).sort({ date: 1 }).lean(),
+      Holiday.find({
+        $or: [{ date: { $gte: todayStart } }, { endDate: { $gte: todayStart } }],
+      })
+        .sort({ date: 1 })
+        .limit(8)
+        .lean(),
     ]);
 
-    const calendarMarks = [];
-    holidays.forEach((item) => {
-      calendarMarks.push({
-        day: new Date(item.date).getDate(),
-        type: "holiday",
-        label: item.name,
-        color: "#5b4aa8",
-      });
-    });
-    homework.forEach((item) => {
-      const type = item.type === "HOMEWORK" ? "homework" : "notice";
-      calendarMarks.push({
-        day: new Date(item.dueDate).getDate(),
-        type,
-        label: item.title,
-        color: type === "homework" ? "#f5c242" : "#fc7a3a",
-      });
-    });
+    const monthItems = monthHolidays.map(serializeHoliday);
+    const upcomingItems = upcomingHolidays.map(serializeHoliday);
+    const calendarMarks = buildCalendarMarks(monthHolidays, monthStart, monthEnd);
 
     return res.json(
       ApiResponse(
@@ -297,6 +367,8 @@ exports.getOverview = async (req, res) => {
             year,
             month,
             marks: calendarMarks,
+            monthItems,
+            upcoming: upcomingItems,
           },
         },
         "Dashboard loaded",

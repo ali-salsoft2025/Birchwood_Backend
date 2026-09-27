@@ -42,6 +42,53 @@ const childFieldsValidator = [
     }),
 ];
 
+/** Require a field only when the client sends it (full edit). Skip on partial updates like resign/assign parent. */
+function requiredWhenPresent(field, message) {
+  return body(field).custom((value, { req }) => {
+    if (!Object.prototype.hasOwnProperty.call(req.body, field)) {
+      return true;
+    }
+    if (value === undefined || value === null || String(value).trim() === "") {
+      throw new Error(message);
+    }
+    return true;
+  });
+}
+
+const childUpdateFieldsValidator = [
+  requiredWhenPresent("rollNumber", "Roll number is required"),
+  requiredWhenPresent("firstName", "First name is required"),
+  body("lastName").optional({ checkFalsy: true }),
+  requiredWhenPresent("term", "Term is required"),
+  requiredWhenPresent("birthday", "Birthday is required"),
+  requiredWhenPresent("age", "Age is required"),
+  body("allergies").optional({ checkFalsy: true }),
+  body("fears").optional({ checkFalsy: true }),
+  body("conditions").optional({ checkFalsy: true }),
+  body("summary").optional({ checkFalsy: true }),
+  body("status").optional().isIn(["ACTIVE", "INACTIVE"]).withMessage("Invalid status"),
+  body("classroom")
+    .optional({ checkFalsy: true })
+    .custom(async (value) => {
+      await assertObjectId(value, "classroom");
+      const classroom = await Classroom.findById(value).select("_id");
+      if (!classroom) throw new Error("Selected class was not found");
+      return true;
+    }),
+  body("parent")
+    .optional({ checkFalsy: true })
+    .custom(async (value) => {
+      // Empty parent is allowed (resign / unassign).
+      if (value === undefined || value === null || String(value).trim() === "") {
+        return true;
+      }
+      await assertObjectId(value, "parent");
+      const parent = await Parent.findById(value).select("_id");
+      if (!parent) throw new Error("Selected parent was not found");
+      return true;
+    }),
+];
+
 exports.addChildValidator = [
   ...childFieldsValidator,
   body("image").not().isEmpty().withMessage("Student photo is required"),
@@ -55,7 +102,7 @@ exports.addChildValidator = [
 ];
 
 exports.updateChildValidator = [
-  ...childFieldsValidator,
+  ...childUpdateFieldsValidator,
   function (req, res, next) {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

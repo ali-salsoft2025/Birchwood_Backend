@@ -87,6 +87,7 @@ async function resolveSenderSnapshot(req) {
       senderRole: "ADMIN",
       sender: admin._id,
       senderName: displayAdminName(admin),
+      senderImage: admin.image || "",
     };
   }
 
@@ -95,6 +96,7 @@ async function resolveSenderSnapshot(req) {
       senderRole: "TEACHER",
       sender: req.user._id,
       senderName: displayTeacherName(req.user),
+      senderImage: req.user.image || "",
     };
   }
 
@@ -103,6 +105,7 @@ async function resolveSenderSnapshot(req) {
       senderRole: "PARENT",
       sender: req.user._id,
       senderName: displayParentName(req.user),
+      senderImage: req.user.fatherImage || req.user.image || "",
     };
   }
 
@@ -116,6 +119,7 @@ async function buildTicketFilter(req) {
   if (role === "ADMIN") {
     const match = {};
     if (req.query.status) match.status = req.query.status;
+    if (req.query.priority) match.priority = req.query.priority;
     if (req.query.participantRole) match.participantRole = req.query.participantRole;
     if (req.query.category) match.category = req.query.category;
     return match;

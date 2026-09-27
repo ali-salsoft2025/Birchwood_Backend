@@ -4,6 +4,7 @@ const {
   emitUserNotification,
   emitAdminNotificationRead,
   emitUserNotificationRead,
+  emitUserNotificationDeleted,
 } = require("./socketEmitter");
 const {
   SEND_TO,
@@ -65,7 +66,19 @@ function noticeMatch() {
       {
         source: { $exists: false },
         $or: [
-          { type: { $in: ["ALERT", "ANNOUNCEMENT"] } },
+          {
+            type: {
+              $in: [
+                "GENERAL",
+                "ALERT",
+                "ANNOUNCEMENT",
+                "EVENT",
+                "HOLIDAY",
+                "REMINDER",
+                "POLICY",
+              ],
+            },
+          },
           { sendTo: { $in: ["TEACHERS", "PARENTS", "ALL", "CUSTOM", "CLASSROOM"] } },
           { deliveryStatus: { $in: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED"] } },
         ],
@@ -109,22 +122,23 @@ exports.sendNotificationToAdmin = async (title, content, type = "NOTIFICATION") 
 exports.createAdminNotification = async ({
   title,
   content,
-  type = "ANNOUNCEMENT",
-  sendTo = SEND_TO.ADMIN,
+  type = "GENERAL",
+  sendTo = SEND_TO.ALL,
   targetTeachers = [],
   targetParents = [],
   targetClassroom = null,
 }) => {
   const audience = normalizeSendTo(sendTo);
-  const shouldBroadcast = audience !== SEND_TO.ADMIN;
-  const recipientTotal = shouldBroadcast
-    ? await countRecipients({
-        sendTo: audience,
-        targetTeachers,
-        targetParents,
-        targetClassroom,
-      })
-    : 0;
+  if (audience === SEND_TO.ADMIN) {
+    throw new Error("Notices must be sent to teachers and/or parents");
+  }
+
+  const recipientTotal = await countRecipients({
+    sendTo: audience,
+    targetTeachers,
+    targetParents,
+    targetClassroom,
+  });
 
   const notification = await Notification.create({
     title,
@@ -140,15 +154,13 @@ exports.createAdminNotification = async ({
       targetClassroom && require("mongoose").Types.ObjectId.isValid(String(targetClassroom))
         ? targetClassroom
         : undefined,
-    deliveryStatus: shouldBroadcast ? "QUEUED" : "",
-    deliveryStats: shouldBroadcast
-      ? { total: recipientTotal, sent: 0, failed: 0 }
-      : { total: 0, sent: 0, failed: 0 },
+    deliveryStatus: "QUEUED",
+    deliveryStats: { total: recipientTotal, sent: 0, failed: 0 },
   });
 
-  if (shouldBroadcast && recipientTotal > 0) {
+  if (recipientTotal > 0) {
     queueBroadcast(notification._id);
-  } else if (shouldBroadcast) {
+  } else {
     await Notification.findByIdAndUpdate(notification._id, {
       deliveryStatus: "COMPLETED",
       deliveryStats: { total: 0, sent: 0, failed: 0 },
@@ -175,4 +187,36 @@ exports.markAllAdminNotificationsRead = async () => {
 
 exports.markUserNotificationRead = async (userId, notificationId, isRead = true) => {
   emitUserNotificationRead(userId, { id: notificationId, isRead });
+};
+
+/**
+ * Recall an admin notice: delete the admin record and every recipient copy,
+ * then notify each assignee over the socket so apps drop it instantly.
+ */
+exports.recallAdminNotice = async (adminNotice) => {
+  if (!adminNotice?._id) {
+    return { deletedRecipients: 0 };
+  }
+
+  const broadcastId = adminNotice._id;
+  const recipients = await Notification.find({
+    broadcastId,
+    isAdmin: false,
+  })
+    .select("_id assignee")
+    .lean();
+
+  await Notification.deleteMany({
+    $or: [{ _id: broadcastId }, { broadcastId }],
+  });
+
+  recipients.forEach((recipient) => {
+    if (!recipient?.assignee) return;
+    emitUserNotificationDeleted(String(recipient.assignee), {
+      id: String(recipient._id),
+      broadcastId: String(broadcastId),
+    });
+  });
+
+  return { deletedRecipients: recipients.length };
 };

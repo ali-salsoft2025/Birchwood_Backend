@@ -141,7 +141,7 @@ exports.getAllHomework = async (req, res) => {
 exports.getAllChildHomework = async (req, res) => {
   try {
     const page = req.query.page || 1;
-    const limit = req.query.limit || 10;
+    const limit = Math.min(Number(req.query.limit) || 100, 100);
     const { from, to } = req.query;
 
     const child = await Children.findById(req.params.id);

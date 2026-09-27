@@ -74,7 +74,16 @@ const notificationSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["ALERT", "ANNOUNCEMENT", "NOTIFICATION"],
+      enum: [
+        "GENERAL",
+        "ALERT",
+        "ANNOUNCEMENT",
+        "EVENT",
+        "HOLIDAY",
+        "REMINDER",
+        "POLICY",
+        "NOTIFICATION",
+      ],
       default: "NOTIFICATION",
     },
   },
@@ -83,4 +92,5 @@ const notificationSchema = new Schema(
 
 notificationSchema.plugin(mongoosePaginate);
 notificationSchema.plugin(aggregatePaginate);
+notificationSchema.index({ createdAt: 1 });
 module.exports = mongoose.model("notification", notificationSchema);

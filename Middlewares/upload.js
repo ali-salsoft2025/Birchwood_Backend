@@ -107,6 +107,20 @@ exports.uploadProduct = wrapUpload(
   ])
 );
 
+const uploadGallery = multer({
+  storage: multiStorage,
+  limits,
+  fileFilter: (req, file, cb) => {
+    if (IMAGE_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Image File Type not Allowed"), false);
+    }
+  },
+});
+
+exports.uploadGallery = wrapUpload(uploadGallery.array("images", 24));
+
 const parentImageStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "Uploads/");

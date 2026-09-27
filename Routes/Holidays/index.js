@@ -6,12 +6,12 @@ const {
   deleteHoliday,
 } = require("../../Controllers/Holiday");
 const router = express.Router();
-const { authenticatedRoute, adminRoute } = require("../../Middlewares/auth");
+const { authenticatedRoute, staffRoute } = require("../../Middlewares/auth");
 const { addHolidayValidator } = require("../../Validator/holidayValidator");
 
-router.post("/addHoliday", adminRoute, addHolidayValidator, addHoliday);
+router.post("/addHoliday", staffRoute, addHolidayValidator, addHoliday);
 router.get("/getAllHolidays", authenticatedRoute, getAllHolidays);
-router.post("/updateHoliday/:id", adminRoute, updateHoliday);
-router.post("/deleteHoliday/:id", adminRoute, deleteHoliday);
+router.post("/updateHoliday/:id", staffRoute, updateHoliday);
+router.post("/deleteHoliday/:id", staffRoute, deleteHoliday);
 
 module.exports = router;

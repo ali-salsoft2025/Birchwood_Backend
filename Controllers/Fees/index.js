@@ -143,7 +143,8 @@ exports.getAllChildVouchers = async (req, res) => {
     },
       {
         $sort: {
-          dueDate: 1,
+          year: -1,
+          month: -1,
         },
       },
     ];
@@ -176,6 +177,7 @@ exports.getAllChildVouchers = async (req, res) => {
 
     Fees.aggregatePaginate(myAggregate, { page, limit }).then(
       (fees) => {
+        res.set("Cache-Control", "no-store");
         res.json(ApiResponse(fees));
       }
     );

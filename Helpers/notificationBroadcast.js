@@ -4,7 +4,7 @@ const Teacher = require("../Models/Teacher");
 const Parent = require("../Models/Parent");
 const Children = require("../Models/Children");
 const Classroom = require("../Models/Classroom");
-const { emitUserNotification } = require("./socketEmitter");
+const { emitUserNotification, emitUserNotificationDeleted } = require("./socketEmitter");
 const { enqueueNotificationJob } = require("./notificationQueue");
 
 const SEND_TO = {
@@ -131,6 +131,13 @@ async function deliverBatch({ broadcast, recipientIds, recipientRole }) {
     return { sent: 0, failed: 0 };
   }
 
+  const stillAlive = async () =>
+    Boolean(await Notification.exists({ _id: broadcast._id, isAdmin: true }));
+
+  if (!(await stillAlive())) {
+    return { sent: 0, failed: recipientIds.length };
+  }
+
   const docs = recipientIds.map((assignee) => ({
     title: broadcast.title,
     content: broadcast.content,
@@ -138,6 +145,7 @@ async function deliverBatch({ broadcast, recipientIds, recipientRole }) {
     assignee,
     isAdmin: false,
     isRead: false,
+    source: "NOTICE",
     sendTo: broadcast.sendTo,
     broadcastId: broadcast._id,
     recipientRole,
@@ -156,6 +164,16 @@ async function deliverBatch({ broadcast, recipientIds, recipientRole }) {
     }
   }
 
+  // Recall may have landed between stillAlive and insertMany — drop orphans.
+  if (!(await stillAlive())) {
+    const orphanIds = inserted.map((row) => row._id).filter(Boolean);
+    if (orphanIds.length) {
+      await Notification.deleteMany({ _id: { $in: orphanIds } });
+    }
+    await purgeBroadcastOrphans(broadcast._id);
+    return { sent: 0, failed: recipientIds.length };
+  }
+
   inserted.forEach((notification) => {
     emitUserNotification(String(notification.assignee), notification);
   });
@@ -167,13 +185,46 @@ async function deliverBatch({ broadcast, recipientIds, recipientRole }) {
   };
 }
 
+async function purgeBroadcastOrphans(broadcastId) {
+  if (!broadcastId) return 0;
+  const orphans = await Notification.find({
+    broadcastId,
+    isAdmin: false,
+  })
+    .select("_id assignee")
+    .lean();
+
+  if (!orphans.length) return 0;
+
+  await Notification.deleteMany({
+    _id: { $in: orphans.map((row) => row._id) },
+  });
+
+  orphans.forEach((row) => {
+    if (!row.assignee) return;
+    emitUserNotificationDeleted(String(row.assignee), {
+      id: String(row._id),
+      broadcastId: String(broadcastId),
+    });
+  });
+
+  return orphans.length;
+}
+
 async function deliverGroupBatches(broadcast, group, onProgress) {
   let total = 0;
   let sent = 0;
   let failed = 0;
+  const broadcastId = broadcast._id;
+
+  const stillAlive = async () =>
+    Boolean(await Notification.exists({ _id: broadcastId, isAdmin: true }));
 
   if (group.ids) {
     for (let index = 0; index < group.ids.length; index += BATCH_SIZE) {
+      if (!(await stillAlive())) {
+        return { total, sent, failed };
+      }
       const batch = group.ids.slice(index, index + BATCH_SIZE);
       const result = await deliverBatch({
         broadcast,
@@ -193,6 +244,9 @@ async function deliverGroupBatches(broadcast, group, onProgress) {
   let batch = [];
 
   for await (const doc of cursor) {
+    if (!(await stillAlive())) {
+      return { total, sent, failed };
+    }
     batch.push(doc._id);
     if (batch.length >= BATCH_SIZE) {
       const result = await deliverBatch({
@@ -209,6 +263,9 @@ async function deliverGroupBatches(broadcast, group, onProgress) {
   }
 
   if (batch.length) {
+    if (!(await stillAlive())) {
+      return { total, sent, failed };
+    }
     const result = await deliverBatch({
       broadcast,
       recipientIds: batch,
@@ -246,7 +303,17 @@ async function processBroadcast(broadcastId) {
 
   try {
     for (const group of groups) {
+      // Stop if admin recalled the notice mid-delivery.
+      const stillExists = await Notification.exists({ _id: broadcastId, isAdmin: true });
+      if (!stillExists) {
+        await purgeBroadcastOrphans(broadcastId);
+        return;
+      }
+
       const result = await deliverGroupBatches(broadcast, group, async (stats) => {
+        const alive = await Notification.exists({ _id: broadcastId, isAdmin: true });
+        if (!alive) return;
+
         total = stats.total;
         sent = stats.sent;
         failed = stats.failed;
@@ -259,12 +326,23 @@ async function processBroadcast(broadcastId) {
       failed = result.failed;
     }
 
+    const stillExists = await Notification.exists({ _id: broadcastId, isAdmin: true });
+    if (!stillExists) {
+      await purgeBroadcastOrphans(broadcastId);
+      return;
+    }
+
     await Notification.findByIdAndUpdate(broadcastId, {
       deliveryStatus: "COMPLETED",
       deliveryStats: { total, sent, failed },
     });
   } catch (error) {
     console.error("Broadcast delivery failed:", error.message);
+    const stillExists = await Notification.exists({ _id: broadcastId, isAdmin: true });
+    if (!stillExists) {
+      await purgeBroadcastOrphans(broadcastId);
+      return;
+    }
     await Notification.findByIdAndUpdate(broadcastId, {
       deliveryStatus: "FAILED",
       deliveryStats: { total, sent, failed },
@@ -285,4 +363,5 @@ module.exports = {
   countRecipients,
   queueBroadcast,
   processBroadcast,
+  purgeBroadcastOrphans,
 };

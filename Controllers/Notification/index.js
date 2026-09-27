@@ -9,10 +9,13 @@ const {
   markAdminNotificationUnread,
   markAllAdminNotificationsRead,
   markUserNotificationRead,
+  sendNotificationToUser,
   systemInboxMatch,
   noticeMatch,
   isSystemInboxNotification,
+  recallAdminNotice,
 } = require("../../Helpers/notification");
+const { emitUserNotificationDeleted } = require("../../Helpers/socketEmitter");
 const {
   SEND_TO,
   normalizeSendTo,
@@ -20,9 +23,19 @@ const {
   countRecipients,
   queueBroadcast,
 } = require("../../Helpers/notificationBroadcast");
+const { enqueueNotificationJob } = require("../../Helpers/notificationQueue");
 const { parseQueryList } = require("../../Helpers/queryList");
 
-const TYPES = ["ALERT", "ANNOUNCEMENT", "NOTIFICATION"];
+const TYPES = [
+  "GENERAL",
+  "ALERT",
+  "ANNOUNCEMENT",
+  "EVENT",
+  "HOLIDAY",
+  "REMINDER",
+  "POLICY",
+  "NOTIFICATION",
+];
 
 function buildAdminMatch(query = {}) {
   const source = String(query.source || "NOTICE").toUpperCase();
@@ -134,11 +147,17 @@ exports.createAlertOrAnnoucement = async (req, res) => {
   try {
     const title = String(req.body.title || "").trim();
     const content = String(req.body.content || "").trim();
-    const type = TYPES.includes(req.body.type) ? req.body.type : "ANNOUNCEMENT";
+    const type = TYPES.includes(req.body.type) ? req.body.type : "GENERAL";
     const sendTo = normalizeSendTo(req.body.sendTo);
     const targetTeachers = normalizeIdList(req.body.teachers);
     const targetParents = normalizeIdList(req.body.parents);
     const targetClassroom = req.body.classroom || null;
+
+    if (sendTo === SEND_TO.ADMIN) {
+      return res
+        .status(400)
+        .json(ApiResponse({}, "Notices must be sent to teachers and/or parents", false));
+    }
 
     if (sendTo === SEND_TO.CUSTOM && !targetTeachers.length && !targetParents.length) {
       return res
@@ -164,12 +183,37 @@ exports.createAlertOrAnnoucement = async (req, res) => {
       targetClassroom,
     });
 
-    const message =
-      sendTo === SEND_TO.ADMIN
-        ? "Notification created successfully"
-        : "Notification queued for delivery";
+    return res
+      .status(201)
+      .json(ApiResponse({ notification }, "Notification queued for delivery", true));
+  } catch (error) {
+    return res.json(
+      ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false)
+    );
+  }
+};
 
-    return res.status(201).json(ApiResponse({ notification }, message, true));
+exports.sendUserNotification = async (req, res) => {
+  try {
+    const userId = String(req.body.userId || "").trim();
+    const title = String(req.body.title || "").trim();
+    const content = String(req.body.content || "").trim();
+    const type = TYPES.includes(req.body.type) ? req.body.type : "NOTIFICATION";
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json(ApiResponse({}, "Valid userId is required", false));
+    }
+    if (!title) {
+      return res.status(400).json(ApiResponse({}, "Title is required", false));
+    }
+
+    enqueueNotificationJob(async () => {
+      await sendNotificationToUser(userId, title, content, type);
+    });
+
+    return res
+      .status(201)
+      .json(ApiResponse({}, "Notification queued for delivery", true));
   } catch (error) {
     return res.json(
       ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false)
@@ -184,6 +228,12 @@ exports.updateNotification = async (req, res) => {
       return res.json(ApiResponse({}, "Notification not found", false));
     }
 
+    if (!notification.isAdmin) {
+      return res
+        .status(403)
+        .json(ApiResponse({}, "Only admin notices can be edited here", false));
+    }
+
     if (req.body.title !== undefined) notification.title = String(req.body.title || "").trim();
     if (req.body.content !== undefined) notification.content = String(req.body.content || "").trim();
     if (req.body.type !== undefined && TYPES.includes(req.body.type)) {
@@ -192,6 +242,20 @@ exports.updateNotification = async (req, res) => {
     if (req.body.isRead !== undefined) notification.isRead = Boolean(req.body.isRead);
 
     await notification.save();
+
+    // Keep recipient copies in sync when editing a school notice.
+    if (!isSystemInboxNotification(notification)) {
+      const recipientPatch = {
+        title: notification.title,
+        content: notification.content,
+        type: notification.type,
+      };
+      await Notification.updateMany(
+        { broadcastId: notification._id, isAdmin: false },
+        { $set: recipientPatch }
+      );
+    }
+
     return res.json(ApiResponse({ notification }, "Notification updated successfully", true));
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
@@ -268,10 +332,56 @@ exports.markAllAsRead = async (req, res) => {
 
 exports.deleteNotification = async (req, res) => {
   try {
-    const notification = await Notification.findByIdAndRemove(req.params.id);
+    const notification = await Notification.findById(req.params.id);
     if (!notification) {
       return res.json(ApiResponse({}, "Notification not found", false));
     }
+
+    // Admin notices: recall from every parent/teacher app copy as well.
+    if (notification.isAdmin && !isSystemInboxNotification(notification)) {
+      const { deletedRecipients } = await recallAdminNotice(notification);
+      return res.json(
+        ApiResponse(
+          { deletedRecipients },
+          "Notice recalled and removed from all users",
+          true
+        )
+      );
+    }
+
+    await Notification.findByIdAndDelete(notification._id);
+    return res.json(ApiResponse({}, "Notification deleted successfully", true));
+  } catch (error) {
+    return res.json(
+      ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false)
+    );
+  }
+};
+
+exports.deleteUserNotification = async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.id);
+    if (!notification) {
+      return res.json(ApiResponse({}, "Notification not found", false));
+    }
+
+    const isOwner =
+      !notification.isAdmin &&
+      String(notification.assignee || "") === String(req.user._id);
+
+    if (!isOwner) {
+      return res
+        .status(403)
+        .json(ApiResponse({}, "Not allowed to delete this notification", false));
+    }
+
+    await Notification.findByIdAndDelete(notification._id);
+    emitUserNotificationDeleted(String(notification.assignee), {
+      id: String(notification._id),
+      broadcastId: notification.broadcastId
+        ? String(notification.broadcastId)
+        : undefined,
+    });
     return res.json(ApiResponse({}, "Notification deleted successfully", true));
   } catch (error) {
     return res.json(
@@ -285,23 +395,36 @@ exports.getUserNotifications = async (req, res) => {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
     const userId = req.user._id;
+    const kind = String(req.query.kind || "").toLowerCase();
 
-    const aggregate = [
-      {
-        $match: {
-          assignee: new mongoose.Types.ObjectId(userId),
-          isAdmin: false,
+    const match = {
+      assignee: new mongoose.Types.ObjectId(userId),
+      isAdmin: false,
+    };
+
+    if (kind === "notice") {
+      match.$or = [
+        { source: "NOTICE" },
+        { broadcastId: { $exists: true, $ne: null } },
+      ];
+    } else if (kind === "inbox") {
+      match.$and = [
+        {
+          $or: [{ source: { $ne: "NOTICE" } }, { source: { $exists: false } }],
         },
-      },
-      { $sort: { createdAt: -1 } },
-    ];
+        {
+          $or: [{ broadcastId: null }, { broadcastId: { $exists: false } }],
+        },
+      ];
+    }
 
     if (req.query.isRead === "true") {
-      aggregate.push({ $match: { isRead: true } });
+      match.isRead = true;
+    } else if (req.query.isRead === "false") {
+      match.isRead = false;
     }
-    if (req.query.isRead === "false") {
-      aggregate.push({ $match: { isRead: false } });
-    }
+
+    const aggregate = [{ $match: match }, { $sort: { createdAt: -1 } }];
 
     const result = await Notification.aggregatePaginate(Notification.aggregate(aggregate), {
       page,
@@ -317,12 +440,32 @@ exports.getUserNotifications = async (req, res) => {
 exports.getUnreadUserNotifications = async (req, res) => {
   try {
     const userId = req.user._id;
+    const kind = String(req.query.kind || "").toLowerCase();
+    const match = {
+      assignee: userId,
+      isAdmin: false,
+      isRead: false,
+    };
+
+    if (kind === "notice") {
+      match.$or = [
+        { source: "NOTICE" },
+        { broadcastId: { $exists: true, $ne: null } },
+      ];
+    } else if (kind === "inbox") {
+      match.$and = [
+        {
+          $or: [{ source: { $ne: "NOTICE" } }, { source: { $exists: false } }],
+        },
+        {
+          $or: [{ broadcastId: null }, { broadcastId: { $exists: false } }],
+        },
+      ];
+    }
+
     const [count, notifications] = await Promise.all([
-      Notification.countDocuments({ assignee: userId, isAdmin: false, isRead: false }),
-      Notification.find({ assignee: userId, isAdmin: false, isRead: false })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean(),
+      Notification.countDocuments(match),
+      Notification.find(match).sort({ createdAt: -1 }).limit(10).lean(),
     ]);
 
     return res.json(
