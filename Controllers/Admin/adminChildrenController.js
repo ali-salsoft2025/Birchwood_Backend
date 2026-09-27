@@ -100,6 +100,7 @@ function listAggregate(req) {
               classroomName: { $arrayElemAt: ["$classroomInfo.classroomName", 0] },
               classroomId: { $arrayElemAt: ["$classroomInfo.classroomId", 0] },
               classroomGrade: { $arrayElemAt: ["$classroomInfo.classroomGrade", 0] },
+              classroomBatch: { $arrayElemAt: ["$classroomInfo.classroomBatch", 0] },
               color: { $arrayElemAt: ["$classroomInfo.color", 0] },
             },
             null,
@@ -115,6 +116,9 @@ function listAggregate(req) {
               motherFirstName: { $arrayElemAt: ["$parentInfo.motherFirstName", 0] },
               motherLastName: { $arrayElemAt: ["$parentInfo.motherLastName", 0] },
               email: { $arrayElemAt: ["$parentInfo.email", 0] },
+              phone: { $arrayElemAt: ["$parentInfo.phone", 0] },
+              address: { $arrayElemAt: ["$parentInfo.address", 0] },
+              city: { $arrayElemAt: ["$parentInfo.city", 0] },
               image: { $arrayElemAt: ["$parentInfo.image", 0] },
             },
             null,
@@ -203,6 +207,12 @@ exports.getChildById = async (req, res) => {
 
 exports.getChildrenByClassroom = async (req, res) => {
   try {
+    if (req.userRole === "teacher") {
+      const ownClass = req.user.classroom && (req.user.classroom._id || req.user.classroom);
+      if (!ownClass || String(ownClass) !== String(req.params.id)) {
+        return res.status(403).json(ApiResponse({}, "No class assigned", false));
+      }
+    }
     const page = req.query.page || 1;
     const limit = req.query.limit || 10;
     const classroom = await Classroom.findById(req.params.id);

@@ -17,10 +17,24 @@ function resolveTeacherId(body = {}, req = {}) {
   return body.teacher || null;
 }
 
+function childIdList(value) {
+  const raw = Array.isArray(value) ? value : value ? [value] : [];
+  const ids = [];
+  raw.forEach((item) => {
+    const id = item && typeof item === "object" ? item._id : item;
+    const text = id == null ? "" : String(id).trim();
+    if (text && mongoose.Types.ObjectId.isValid(text) && !ids.includes(text)) {
+      ids.push(text);
+    }
+  });
+  return ids;
+}
+
 async function normalizeHomeworkPayload(body = {}, req = {}) {
   const assignee = ASSIGNEE_TYPES.includes(body.assignee) ? body.assignee : "CHILD";
   const type = HOMEWORK_TYPES.includes(body.type) ? body.type : "HOMEWORK";
   const teacher = resolveTeacherId(body, req);
+  const childIds = childIdList(body.children);
 
   const payload = {
     title: String(body.title || "").trim(),
@@ -38,7 +52,8 @@ async function normalizeHomeworkPayload(body = {}, req = {}) {
   if (assignee === "CLASS") {
     payload.classroom = body.classroom || null;
   } else {
-    payload.children = body.children || null;
+    payload.children = childIds[0] || null;
+    payload.childIds = childIds;
   }
 
   return payload;
@@ -84,21 +99,20 @@ async function validateHomeworkAssignment(payload = {}, req = {}) {
     return null;
   }
 
-  if (!payload.children) {
+  const childIds = payload.childIds?.length ? payload.childIds : childIdList(payload.children);
+  if (!childIds.length) {
     return "Student is required for individual assignments";
   }
-  if (!mongoose.Types.ObjectId.isValid(payload.children)) {
-    return "Invalid student id";
-  }
 
-  const child = await Children.findById(payload.children);
-  if (!child) {
-    return "Student not found";
-  }
-
-  if (req.userRole === "teacher" && teacher.classroom) {
-    if (!child.classroom || String(child.classroom) !== String(teacher.classroom)) {
-      return "You can only assign homework to students in your classroom";
+  for (const childId of childIds) {
+    const child = await Children.findById(childId);
+    if (!child) {
+      return "Student not found";
+    }
+    if (req.userRole === "teacher" && teacher.classroom) {
+      if (!child.classroom || String(child.classroom) !== String(teacher.classroom)) {
+        return "You can only assign homework to students in your classroom";
+      }
     }
   }
 
@@ -189,6 +203,7 @@ function homeworkLookupStages() {
 module.exports = {
   ASSIGNEE_TYPES,
   HOMEWORK_TYPES,
+  childIdList,
   normalizeHomeworkPayload,
   validateHomeworkAssignment,
   notifyHomeworkAssigned,

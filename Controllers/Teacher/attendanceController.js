@@ -21,9 +21,29 @@ const {
 } = require("../../Helpers/verification");
 const mongoose = require("mongoose");
 const Teacher = require("../../Models/Teacher");
+const SchoolSettings = require("../../Models/SchoolSettings");
+const {
+  describeTeacherRules,
+  punchState,
+  quotaAllows,
+  calendarYearBounds,
+} = require("../../Helpers/teacherDay");
+const {
+  DEFAULT_SCHOOL_TIME_ZONE,
+  isValidTimeZone,
+  schoolDayBounds,
+  schoolMonthBounds,
+  schoolParts,
+  zonedWallTime,
+} = require("../../Helpers/schoolDay");
+
+async function loadTeacherRules() {
+  const doc = await SchoolSettings.getSingleton();
+  const timeZone = isValidTimeZone(doc.timeZone) ? doc.timeZone : DEFAULT_SCHOOL_TIME_ZONE;
+  return { rules: { ...describeTeacherRules(doc.teacherAttendance || {}), timeZone }, timeZone };
+}
 
 exports.markCheckIn = async (req, res) => {
-    let { checkIn } = req.body; // checkIn is sent in UTC-0
     let teacher = await Teacher.findById(req.user._id);
 
     if (!teacher) {
@@ -31,36 +51,38 @@ exports.markCheckIn = async (req, res) => {
     }
 
     try {
-        const attendanceDate = moment.utc(checkIn).startOf('day'); // Ensure it's treated as UTC-0
-        const today = moment.utc().startOf('day'); // Get today’s date in UTC
-
-        // Ensure check-in date is today in UTC
-        if (!attendanceDate.isSame(today, 'day')) {
-            return res.status(400).json(ApiResponse({}, "Attendance Date should be today", false));
+        const { rules, timeZone } = await loadTeacherRules();
+        const now = new Date();
+        const punch = punchState(now, rules, timeZone);
+        if (!punch.checkInOpen) {
+            return res.status(400).json(
+                ApiResponse({}, `Check-in opens at ${rules.checkInOpensLabel}`, false)
+            );
         }
+        const { start, end } = schoolDayBounds(now, timeZone);
 
-        // Define correct start and end of the day in UTC
-        const startDate = moment.utc(checkIn).startOf('day');
-        const endDate = moment.utc(checkIn).endOf('day');
-
-        // Check if attendance is already marked for today
+        // Check if attendance is already marked for the school day
         let existingAttendance = await Attendance.findOne({
             teacher,
             checkIn: {
-                $gte: startDate.toDate(),
-                $lte: endDate.toDate()
+                $gte: start,
+                $lte: end
             }
         });
 
         if (existingAttendance) {
+            if (existingAttendance.leaveStatus === "PENDING" || existingAttendance.status === "LEAVE") {
+                return res.status(400).json(ApiResponse({}, "Leave is already applied for today", false));
+            }
             return res.status(400).json(ApiResponse({}, "Check-In Already Marked", false));
         }
 
-        // Create new attendance record
+        // Create new attendance record. The school clock decides late vs on time.
         const newAttendance = new Attendance({
             teacher,
-            checkIn: moment.utc(checkIn).toDate(), // Ensure stored as UTC-0
-            status: "PRESENT"
+            checkIn: now,
+            status: "PRESENT",
+            late: punch.late,
         });
 
         await newAttendance.save();
@@ -69,7 +91,10 @@ exports.markCheckIn = async (req, res) => {
         teacher.checkIn = true;
         await teacher.save();
 
-        return res.status(200).json(ApiResponse({ newAttendance }, "Check-In Marked Successfully", true));
+        const message = punch.late
+            ? `Checked in late. On-time check-in ended at ${rules.onTimeUntilLabel}`
+            : "Check-In Marked Successfully";
+        return res.status(200).json(ApiResponse({ newAttendance, late: punch.late, rules }, message, true));
 
     } catch (error) {
         return res.json(ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false));
@@ -77,7 +102,6 @@ exports.markCheckIn = async (req, res) => {
 };
 
 exports.markCheckOut = async (req, res) => {
-  let { checkOut } = req.body;
   let teacher = await Teacher.findById(req.user._id);
 
   if (!teacher) {
@@ -85,26 +109,17 @@ exports.markCheckOut = async (req, res) => {
   }
 
   try {
-    // Convert checkOut to UTC & define start/end of the day in UTC
-    const checkOutUTC = moment.utc(checkOut);
-    const startDate = checkOutUTC.clone().startOf('day').toDate();
-    const endDate = checkOutUTC.clone().endOf('day').toDate();
+    const { rules, timeZone } = await loadTeacherRules();
+    const now = new Date();
+    const { start, end } = schoolDayBounds(now, timeZone);
 
-    // Get today's date in UTC for comparison
-    const todayUTC = moment.utc().startOf('day');
-
-    // Ensure checkOut is for today
-    if (!checkOutUTC.isSame(todayUTC, 'day')) {
-      return res.status(400).json(ApiResponse({}, "CheckOut Date should be today", false));
-    }
-
-    // Find existing attendance for today
+    // Find existing attendance for the school day
     let existingAttendance = await Attendance.findOne({
       teacher,
-      checkIn: { $gte: startDate, $lte: endDate } // Check if a check-in exists for today
+      checkIn: { $gte: start, $lte: end }
     });
 
-    if (!existingAttendance) {
+    if (!existingAttendance || existingAttendance.status !== "PRESENT") {
       return res.status(400).json(ApiResponse({}, "Check-In not found for today", false));
     }
 
@@ -113,8 +128,13 @@ exports.markCheckOut = async (req, res) => {
       return res.status(400).json(ApiResponse({}, "CheckOut Already Marked", false));
     }
 
-    // Update attendance record with check-out time
-    existingAttendance.checkOut = checkOutUTC.toDate();
+    const punch = punchState(now, rules, timeZone);
+    if (!punch.checkoutOpen) {
+      return res.status(400).json(ApiResponse({}, `Check-out opens at ${rules.checkOutLabel}`, false));
+    }
+
+    // Update attendance record with the school clock, not the phone clock
+    existingAttendance.checkOut = now;
     await existingAttendance.save();
 
     // Update teacher's checkOut status
@@ -132,66 +152,154 @@ exports.markLeave = async (req, res) => {
   let teacher = await Teacher.findById(req.user._id);
 
   try {
-    // Convert leave dates to UTC
-    const startDate = moment.utc(leaveFrom).startOf('day');
-    const endDate = moment.utc(leaveTo).endOf('day'); 
+    const { rules, timeZone } = await loadTeacherRules();
+    const allowed = rules.leaveQuota[leaveType];
+    if (allowed == null) {
+      return res.status(400).json(ApiResponse({}, "Leave type is not available", false));
+    }
 
-    // Calculate the duration of leave in days
-    const leaveDuration = endDate.diff(startDate, 'days') + 1;
-
+    const fromParts = schoolParts(new Date(leaveFrom), timeZone);
+    const toParts = schoolParts(new Date(leaveTo), timeZone);
+    const startIndex = Date.UTC(fromParts.year, fromParts.month, fromParts.date);
+    const endIndex = Date.UTC(toParts.year, toParts.month, toParts.date);
+    const leaveDuration = Math.round((endIndex - startIndex) / 86400000) + 1;
     if (leaveDuration < 1) {
       return res.status(400).json(ApiResponse({}, "Invalid leave duration", false));
     }
+
+    const rangeStart = zonedWallTime(fromParts.year, fromParts.month, fromParts.date, 0, 0, timeZone);
+    const rangeEnd = new Date(
+      zonedWallTime(toParts.year, toParts.month, toParts.date + 1, 0, 0, timeZone).getTime() - 1
+    );
+    const year = calendarYearBounds(rangeStart, timeZone);
+    const used = await Attendance.countDocuments({
+      teacher: teacher._id,
+      leaveType,
+      leaveStatus: { $in: ["PENDING", "APPROVED"] },
+      checkIn: { $gte: year.start, $lte: year.end },
+      $or: [
+        { checkIn: { $lt: rangeStart } },
+        { checkIn: { $gt: rangeEnd } },
+      ],
+    });
+    if (!quotaAllows(used, leaveDuration, allowed)) {
+      const left = Math.max(0, allowed - used);
+      return res.status(400).json(
+        ApiResponse({}, `Only ${left} ${leaveType.toLowerCase()} leave day${left === 1 ? "" : "s"} left this year`, false)
+      );
+    }
     
     let todayAttendance = null;
-    const today = moment.utc().startOf("day");
+    const todayParts = schoolParts(new Date(), timeZone);
     
-    // Loop through each day of leave and mark attendance
+    // Loop through each school day of leave and mark attendance
     for (let i = 0; i < leaveDuration; i++) {
-      const currentDate = startDate.clone().add(i, 'days');
+      const cursor = new Date(startIndex + i * 86400000);
+      const yearNum = cursor.getUTCFullYear();
+      const monthIndex = cursor.getUTCMonth();
+      const dayNum = cursor.getUTCDate();
+      const dayStart = zonedWallTime(yearNum, monthIndex, dayNum, 0, 0, timeZone);
+      const dayEnd = new Date(zonedWallTime(yearNum, monthIndex, dayNum + 1, 0, 0, timeZone).getTime() - 1);
 
       let existingAttendance = await Attendance.findOne({
         teacher,
         checkIn: {
-          $gte: currentDate.toDate(),
-          $lte: currentDate.clone().endOf('day').toDate()
+          $gte: dayStart,
+          $lte: dayEnd
         }
       });
+
+      if (existingAttendance && existingAttendance.status === "PRESENT") {
+        return res.status(400).json(ApiResponse({}, "Cannot apply leave on a day that is already checked in", false));
+      }
 
       let attendanceRecord;
       if (existingAttendance) {
         existingAttendance.leaveReason = leaveReason;
         existingAttendance.leaveType = leaveType;
+        existingAttendance.leaveStatus = "PENDING";
         existingAttendance.status = "LEAVE";
         await existingAttendance.save();
         attendanceRecord = existingAttendance;
       } else {
         attendanceRecord = new Attendance({
           teacher,
-          checkIn: currentDate.toDate(),
+          checkIn: dayStart,
           leaveType,
           leaveReason,
-          status: "LEAVE"
+          leaveStatus: "PENDING",
+          status: "LEAVE",
         });
         await attendanceRecord.save();
       }
 
-      // Capture today's attendance
-      if (currentDate.isSame(today, "day")) {
+      if (
+        yearNum === todayParts.year &&
+        monthIndex === todayParts.month &&
+        dayNum === todayParts.date
+      ) {
         todayAttendance = attendanceRecord;
       }
     }
 
-    // Update teacher's check-in status if leave includes today
-    if (todayAttendance) {
+    if (todayAttendance && teacher) {
       teacher.checkIn = true;
       await teacher.save();
     }
 
-    return res.status(200).json(ApiResponse({ todayAttendance }, "Leave Marked Successfully", true));
-
+    return res.status(200).json(
+      ApiResponse(
+        { todayAttendance, rules },
+        "Leave applied",
+        true
+      )
+    );
   } catch (error) {
     return res.json(ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false));
+  }
+};
+
+exports.getSchedule = async (req, res) => {
+  try {
+    const { rules, timeZone } = await loadTeacherRules();
+    const now = new Date();
+    const punch = punchState(now, rules, timeZone);
+    const year = calendarYearBounds(now, timeZone);
+    const usedRows = await Attendance.aggregate([
+      {
+        $match: {
+          teacher: new mongoose.Types.ObjectId(String(req.user._id)),
+          leaveStatus: { $in: ["PENDING", "APPROVED"] },
+          checkIn: { $gte: year.start, $lte: year.end },
+        },
+      },
+      { $group: { _id: "$leaveType", count: { $sum: 1 } } },
+    ]);
+    const used = { SICK: 0, CASUAL: 0, ANNUAL: 0 };
+    usedRows.forEach((row) => {
+      if (used[row._id] != null) used[row._id] = row.count;
+    });
+    const quota = {};
+    Object.keys(rules.leaveQuota).forEach((key) => {
+      const allowed = rules.leaveQuota[key];
+      quota[key] = { allowed, used: used[key] || 0, remaining: Math.max(0, allowed - (used[key] || 0)) };
+    });
+    return res.json(
+      ApiResponse(
+        {
+          rules,
+          timeZone,
+          lateIfNow: punch.checkInOpen && punch.late,
+          checkInOpen: punch.checkInOpen,
+          checkoutOpen: punch.checkoutOpen,
+          quota,
+        },
+        "",
+        true
+      )
+    );
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
   }
 };
 
@@ -296,27 +404,22 @@ exports.getAttendanceByMonth = async (req, res) => {
   try {
     let { month, year } = req.query;
 
-    // Default to current month & year if not provided
-    const currentDate = moment.utc();
+    const { timeZone } = await loadTeacherRules();
+    const schoolNow = schoolParts(new Date(), timeZone);
 
     if (!month) {
-      month = currentDate.month() + 1; // Moment.js months are zero-based
+      month = schoolNow.month + 1;
     } else {
-      month = parseInt(month); // Ensure month is an integer
+      month = parseInt(month);
     }
 
     if (!year) {
-      year = currentDate.year();
+      year = schoolNow.year;
     } else {
-      year = parseInt(year); // Ensure year is an integer
+      year = parseInt(year);
     }
 
-    // Ensure month is two digits
-    const formattedMonth = month < 10 ? `0${month}` : `${month}`;
-
-    // Construct start & end of the month in UTC
-    const startOfMonth = moment.utc(`${year}-${formattedMonth}-01`).startOf("month").toDate();
-    const endOfMonth = moment.utc(`${year}-${formattedMonth}-01`).endOf("month").toDate();
+    const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(year, month, timeZone);
 
     // Aggregate attendance statistics
     const attendanceStats = await Attendance.aggregate([
@@ -355,7 +458,9 @@ exports.getAttendanceByMonth = async (req, res) => {
       checkIn: { $gte: startOfMonth, $lte: endOfMonth }
     });
 
-    return res.status(200).json(ApiResponse({ attendance, stats }, "Attendance fetched successfully", true));
+    return res.status(200).json(
+      ApiResponse({ attendance, stats, timeZone }, "Attendance fetched successfully", true)
+    );
 
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
@@ -366,21 +471,21 @@ exports.getMonthlyAttendanceStats = async (req, res) => {
   try {
     let { month, year } = req.query;
 
-    const currentDate = moment();
+    const { timeZone } = await loadTeacherRules();
+    const schoolNow = schoolParts(new Date(), timeZone);
 
     if (!month) {
-      month = (currentDate.month() + 1).toString(); // Moment.js months are zero-based
+      month = String(schoolNow.month + 1);
     }
     if (!year) {
-      year = currentDate.year().toString();
+      year = String(schoolNow.year);
     }
 
-    // Ensure month is two digits
-    month = month.length === 1 ? `0${month}` : month;
-
-    // Construct date strings in ISO format (YYYY-MM-DD)
-    const startOfMonth = moment.utc(`${year}-${month}-01`).startOf("month").toDate();
-    const endOfMonth = moment.utc(`${year}-${month}-01`).endOf("month").toDate();
+    const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(
+      parseInt(year, 10),
+      parseInt(month, 10),
+      timeZone
+    );
 
    // Aggregate to count status types
    const attendanceStats = await Attendance.aggregate([

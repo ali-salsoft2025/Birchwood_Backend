@@ -35,6 +35,15 @@ const teacherAttendanceSchema = new Schema(
       enum: ["PRESENT", "ABSENT", "LEAVE", "HOLIDAY"],
       default: "ABSENT",
     },
+    late: {
+      type: Boolean,
+      default: false,
+    },
+    leaveStatus: {
+      type: String,
+      enum: ["", "PENDING", "APPROVED", "REJECTED"],
+      default: "",
+    },
   },
   { timestamps: true }
 );

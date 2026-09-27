@@ -22,6 +22,7 @@ const {
 } = require("../../Helpers/verification");
 const mongoose = require("mongoose");
 const Teacher = require("../../Models/Teacher");
+const Classroom = require("../../Models/Classroom");
 const {
   childDayView,
   isSchoolWeekday,
@@ -30,9 +31,19 @@ const {
   scheduleLabels,
 } = require("../../Helpers/schoolDay");
 
-function ownsChild(req, child) {
-  if (req.userRole !== "parent") return true;
-  return child?.parent && String(child.parent) === String(req.user._id);
+async function ownsChild(req, child) {
+  if (!child) return false;
+  if (req.userRole === "parent") {
+    return child.parent && String(child.parent) === String(req.user._id);
+  }
+  if (req.userRole === "teacher") {
+    const classroomId = child.classroom?._id || child.classroom;
+    const classroom = child.classroom?.teacher
+      ? child.classroom
+      : await Classroom.findById(classroomId).select("teacher");
+    return classroom?.teacher && String(classroom.teacher) === String(req.user._id);
+  }
+  return true;
 }
 
 async function attendanceForSchoolDay(childId, date = new Date()) {
@@ -62,8 +73,8 @@ exports.markCheckIn = async (req, res) => {
     if (!currentChild) {
       return res.status(404).json(ApiResponse({}, "Child Not Found", false));
     }
-    if (!ownsChild(req, currentChild)) {
-      return res.status(403).json(ApiResponse({}, "Access Forbidden", false));
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "You can only mark students in your class", false));
     }
 
     const teacher = currentChild.classroom?.teacher;
@@ -121,12 +132,12 @@ exports.markCheckOut = async (req, res) => {
       return res.status(400).json(ApiResponse({}, "Pickup is only needed on school days", false));
     }
 
-    const currentChild = await Children.findById(children);
+    const currentChild = await Children.findById(children).populate("classroom");
     if (!currentChild) {
       return res.status(404).json(ApiResponse({}, "Child Not Found", false));
     }
-    if (!ownsChild(req, currentChild)) {
-      return res.status(403).json(ApiResponse({}, "Access Forbidden", false));
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "You can only mark students in your class", false));
     }
 
     const attendance = await attendanceForSchoolDay(children, now);
@@ -172,8 +183,8 @@ exports.markLeave = async (req, res) => {
     if (!currentChild) {
       return res.status(404).json(ApiResponse({}, "Child not found", false));
     }
-    if (!ownsChild(req, currentChild)) {
-      return res.status(403).json(ApiResponse({}, "Access Forbidden", false));
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "You can only mark students in your class", false));
     }
 
     let teacher = currentChild.classroom?.teacher;
@@ -243,10 +254,13 @@ exports.getAllChildAttendance = async (req, res) => {
     const limit = req.query.limit || 10;
     let {from,to} = req.query
 
-    let currentChild = await Children.findById(req.params.child)
+    let currentChild = await Children.findById(req.params.child).populate("classroom");
 
     if(!currentChild){
       return res.json(ApiResponse({}, "Child Not Found", false));
+    }
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "You can only view students in your class", false));
     }
 
     let finalAggregate = [
@@ -293,6 +307,14 @@ exports.getAttendanceByMonth = async (req, res) => {
     // Define start and end of the month in **UTC**
     const startOfMonth = moment.utc(`${year}-${monthString}-01`, "YYYY-MM-DD").startOf("month").toDate();
     const endOfMonth = moment.utc(`${year}-${monthString}-01`, "YYYY-MM-DD").endOf("month").toDate();
+
+    const currentChild = await Children.findById(req.params.child).populate("classroom");
+    if (!currentChild) {
+      return res.status(404).json(ApiResponse({}, "Child Not Found", false));
+    }
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "You can only view students in your class", false));
+    }
 
     const childId = new mongoose.Types.ObjectId(req.params.child);
 

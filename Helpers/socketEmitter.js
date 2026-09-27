@@ -14,6 +14,7 @@ const ROOMS = {
   admin: "admin",
   user: (userId) => `user:${userId}`,
   ticket: (ticketId) => `ticket:${ticketId}`,
+  chat: (chatId) => `chat:${chatId}`,
 };
 
 let io = null;
@@ -39,6 +40,11 @@ function emitToUser(userId, event, payload) {
 function emitToTicket(ticketId, event, payload) {
   if (!io || !ticketId) return;
   io.to(ROOMS.ticket(ticketId)).emit(event, payload);
+}
+
+function emitChatMessage(chatId, message) {
+  if (!io || !chatId || !message) return;
+  io.to(ROOMS.chat(chatId)).emit("message", message);
 }
 
 function emitAdminNotification(notification) {
@@ -110,6 +116,7 @@ module.exports = {
   emitToAdmin,
   emitToUser,
   emitToTicket,
+  emitChatMessage,
   emitAdminNotification,
   emitUserNotification,
   emitAdminNotificationRead,

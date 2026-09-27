@@ -9,6 +9,33 @@ const { errorHandler } = require("../../Helpers/errorHandler");
 const { sendNotificationToAdmin } = require("../../Helpers/notification");
 const sanitizeUser = require("../../Helpers/sanitizeUser");
 const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
+const SchoolSettings = require("../../Models/SchoolSettings");
+const {
+  DEFAULT_SCHOOL_TIME_ZONE,
+  isValidTimeZone,
+  schoolMonthBounds,
+  schoolParts,
+  zonedWallTime,
+} = require("../../Helpers/schoolDay");
+
+async function schoolZone() {
+  const doc = await SchoolSettings.getSingleton();
+  return isValidTimeZone(doc.timeZone) ? doc.timeZone : DEFAULT_SCHOOL_TIME_ZONE;
+}
+
+function wallStamp(schoolDate, clock, timeZone) {
+  const match = String(schoolDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const time = String(clock || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match || !time) return null;
+  return zonedWallTime(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(time[1]),
+    Number(time[2]),
+    timeZone
+  );
+}
 
 const TEACHER_CREATE_FIELDS = [
   "email",
@@ -327,18 +354,18 @@ exports.searchClassrooms = async (req, res) => {
 exports.getTeacherAttendanceByMonth = async (req, res) => {
   try {
     let { month, year } = req.query;
-    const now = moment.utc();
-    month = parseInt(month || now.month() + 1, 10);
-    year = parseInt(year || now.year(), 10);
-    const startOfMonth = moment.utc({ year, month: month - 1, day: 1 }).startOf("month").toDate();
-    const endOfMonth = moment.utc({ year, month: month - 1, day: 1 }).endOf("month").toDate();
+    const timeZone = await schoolZone();
+    const schoolNow = schoolParts(new Date(), timeZone);
+    month = parseInt(month || schoolNow.month + 1, 10);
+    year = parseInt(year || schoolNow.year, 10);
+    const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(year, month, timeZone);
 
     const attendance = await TeacherAttendance.find({
       teacher: req.params.id,
       checkIn: { $gte: startOfMonth, $lte: endOfMonth },
     }).sort({ checkIn: 1 });
 
-    return res.json(ApiResponse({ attendance }, "Attendance fetched successfully", true));
+    return res.json(ApiResponse({ attendance, timeZone }, "Attendance fetched successfully", true));
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
   }
@@ -346,12 +373,15 @@ exports.getTeacherAttendanceByMonth = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { status, checkIn, checkOut, leaveReason } = req.body;
+    const { status, checkIn, checkOut, leaveReason, schoolDate, checkInClock, checkOutClock } = req.body;
+    const timeZone = await schoolZone();
+    const schoolCheckIn = wallStamp(schoolDate, checkInClock || "00:00", timeZone);
+    const schoolCheckOut = wallStamp(schoolDate, checkOutClock, timeZone);
     const attendance = await TeacherAttendance.create({
       teacher: req.params.id,
       status: status || "PRESENT",
-      checkIn: checkIn ? new Date(Number(checkIn) || checkIn) : new Date(),
-      checkOut: checkOut ? new Date(Number(checkOut) || checkOut) : undefined,
+      checkIn: schoolCheckIn || (checkIn ? new Date(Number(checkIn) || checkIn) : new Date()),
+      checkOut: schoolCheckOut || (checkOut ? new Date(Number(checkOut) || checkOut) : undefined),
       leaveReason: leaveReason || "",
     });
     return res.json(ApiResponse({ attendance }, "Attendance added successfully", true));
@@ -362,13 +392,16 @@ exports.markAttendance = async (req, res) => {
 
 exports.updateAttendance = async (req, res) => {
   try {
-    const { status, checkIn, checkOut, leaveReason } = req.body;
+    const { status, checkIn, checkOut, leaveReason, schoolDate, checkInClock, checkOutClock } = req.body;
+    const timeZone = await schoolZone();
+    const schoolCheckIn = wallStamp(schoolDate, checkInClock || "00:00", timeZone);
+    const schoolCheckOut = wallStamp(schoolDate, checkOutClock, timeZone);
     const attendance = await TeacherAttendance.findByIdAndUpdate(
       req.params.id,
       {
         status,
-        checkIn: checkIn ? new Date(Number(checkIn) || checkIn) : undefined,
-        checkOut: checkOut ? new Date(Number(checkOut) || checkOut) : undefined,
+        checkIn: schoolCheckIn || (checkIn ? new Date(Number(checkIn) || checkIn) : undefined),
+        checkOut: schoolCheckOut || (checkOut ? new Date(Number(checkOut) || checkOut) : undefined),
         leaveReason,
       },
       { new: true }

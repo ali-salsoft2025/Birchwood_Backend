@@ -465,6 +465,12 @@ exports.getPublishedByChild = async (req, res) => {
     if (req.userRole === "parent" && String(child.parent) !== String(req.user._id)) {
       return res.status(403).json(ApiResponse({}, "Access denied", false));
     }
+    if (req.userRole === "teacher") {
+      const ownClass = req.user.classroom && (req.user.classroom._id || req.user.classroom);
+      if (!ownClass || String(ownClass) !== String(child.classroom)) {
+        return res.status(403).json(ApiResponse({}, "Access denied", false));
+      }
+    }
 
     const exams = await Exam.find({
       classroom: child.classroom,
@@ -522,6 +528,12 @@ exports.getPublishedExamForChild = async (req, res) => {
     }
     if (req.userRole === "parent" && String(child.parent) !== String(req.user._id)) {
       return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+    if (req.userRole === "teacher") {
+      const ownClass = req.user.classroom && (req.user.classroom._id || req.user.classroom);
+      if (!ownClass || String(ownClass) !== String(child.classroom)) {
+        return res.status(403).json(ApiResponse({}, "Access denied", false));
+      }
     }
     if (String(child.classroom) !== String(exam.classroom)) {
       return res.status(400).json(ApiResponse({}, "Child is not in this exam class", false));
