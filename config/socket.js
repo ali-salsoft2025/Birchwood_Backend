@@ -13,6 +13,7 @@ const {
   ROOMS,
 } = require("../Helpers/socketEmitter");
 const { loadTicketForAccess, canAccessTicket } = require("../Helpers/supportAccess");
+const Chat = require("../Models/Chat");
 const { getSocketCors } = require("./cors");
 
 function normalizeToken(value) {
@@ -125,6 +126,30 @@ function initSocket(server) {
       } catch (error) {
         if (typeof ack === "function") {
           ack({ ok: false, message: error.message || "Unable to join ticket room" });
+        }
+      }
+    });
+
+    socket.on("join chat", async (chatId, ack) => {
+      try {
+        if (!chatId || !socket.data.userId) {
+          throw new Error("Chat id is required");
+        }
+        const chat = await Chat.findById(chatId).select("teacher parent");
+        if (!chat) {
+          throw new Error("Chat not found");
+        }
+        const userId = String(socket.data.userId);
+        const allowed =
+          String(chat.teacher) === userId || String(chat.parent) === userId;
+        if (!allowed) {
+          throw new Error("Access denied");
+        }
+        socket.join(ROOMS.chat(String(chatId)));
+        if (typeof ack === "function") ack({ ok: true });
+      } catch (error) {
+        if (typeof ack === "function") {
+          ack({ ok: false, message: error.message || "Unable to join chat" });
         }
       }
     });

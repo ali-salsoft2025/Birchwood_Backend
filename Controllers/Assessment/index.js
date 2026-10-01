@@ -8,7 +8,7 @@ const { letterGrade } = require("../Result");
 
 async function assertAssessmentsEnabled() {
   const modules = await SchoolSettings.getModules();
-  return modules.results !== false;
+  return modules.assessments !== false;
 }
 
 async function teacherOwnsClassroom(req, classroomId) {
@@ -35,7 +35,7 @@ function summarize(assessment, mark) {
 exports.createAssessment = async (req, res) => {
   try {
     if (!(await assertAssessmentsEnabled())) {
-      return res.status(403).json(ApiResponse({}, "Results are disabled", false));
+      return res.status(403).json(ApiResponse({}, "Tests are turned off", false));
     }
     if (req.userRole !== "teacher" && !req.isAdmin) {
       return res.status(403).json(ApiResponse({}, "Access denied", false));
@@ -76,7 +76,7 @@ exports.createAssessment = async (req, res) => {
 exports.updateAssessment = async (req, res) => {
   try {
     if (!(await assertAssessmentsEnabled())) {
-      return res.status(403).json(ApiResponse({}, "Results are disabled", false));
+      return res.status(403).json(ApiResponse({}, "Tests are turned off", false));
     }
     const assessment = await Assessment.findById(req.params.id);
     if (!assessment) {
@@ -107,7 +107,7 @@ exports.updateAssessment = async (req, res) => {
 exports.setAssessmentStatus = async (req, res) => {
   try {
     if (!(await assertAssessmentsEnabled())) {
-      return res.status(403).json(ApiResponse({}, "Results are disabled", false));
+      return res.status(403).json(ApiResponse({}, "Tests are turned off", false));
     }
     const assessment = await Assessment.findById(req.params.id);
     if (!assessment) {
@@ -155,7 +155,7 @@ exports.deleteAssessment = async (req, res) => {
 exports.getMyAssessments = async (req, res) => {
   try {
     if (!(await assertAssessmentsEnabled())) {
-      return res.json(ApiResponse({ docs: [] }, "Results are disabled", true));
+      return res.json(ApiResponse({ docs: [] }, "Tests are turned off", true));
     }
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
@@ -236,7 +236,7 @@ exports.getAssessmentById = async (req, res) => {
 exports.upsertAssessmentMarks = async (req, res) => {
   try {
     if (!(await assertAssessmentsEnabled())) {
-      return res.status(403).json(ApiResponse({}, "Results are disabled", false));
+      return res.status(403).json(ApiResponse({}, "Tests are turned off", false));
     }
     const assessment = await Assessment.findById(req.params.id);
     if (!assessment) {
@@ -287,6 +287,12 @@ exports.getPublishedByChild = async (req, res) => {
     }
     if (req.userRole === "parent" && String(child.parent) !== String(req.user._id)) {
       return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+    if (req.userRole === "teacher") {
+      const ownClass = req.user.classroom && (req.user.classroom._id || req.user.classroom);
+      if (!ownClass || String(ownClass) !== String(child.classroom)) {
+        return res.status(403).json(ApiResponse({}, "Access denied", false));
+      }
     }
 
     const assessments = await Assessment.find({

@@ -1,3 +1,4 @@
+const DEFAULT_SCHOOL_TIME_ZONE = "Asia/Karachi";
 const SCHOOL_OFFSET_MS = 5 * 60 * 60 * 1000;
 const SCHOOL_START_MINUTES = 7 * 60;
 const WINDOW_MINUTES = 60;
@@ -7,30 +8,81 @@ const CHECKIN_ON_TIME_END_MINUTES = SCHOOL_START_MINUTES + WINDOW_MINUTES;
 const PICKUP_OPEN_MINUTES = DISMISSAL_MINUTES - WINDOW_MINUTES;
 const PICKUP_AFTER_MINUTES = PICKUP_OPEN_MINUTES;
 
-function schoolParts(date = new Date()) {
-  const shifted = new Date(date.getTime() + SCHOOL_OFFSET_MS);
+const WEEKDAYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+function isValidTimeZone(value) {
+  if (!value || typeof value !== "string") return false;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function schoolParts(date = new Date(), timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
+  const zone = isValidTimeZone(timeZone) ? timeZone : DEFAULT_SCHOOL_TIME_ZONE;
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date);
+  const bag = {};
+  formatted.forEach((part) => {
+    if (part.type !== "literal") bag[part.type] = part.value;
+  });
+  let hours = Number(bag.hour);
+  if (hours === 24) hours = 0;
   return {
-    year: shifted.getUTCFullYear(),
-    month: shifted.getUTCMonth(),
-    date: shifted.getUTCDate(),
-    weekday: shifted.getUTCDay(),
-    hours: shifted.getUTCHours(),
-    minutes: shifted.getUTCMinutes(),
+    year: Number(bag.year),
+    month: Number(bag.month) - 1,
+    date: Number(bag.day),
+    weekday: WEEKDAYS[bag.weekday] ?? 0,
+    hours,
+    minutes: Number(bag.minute),
+    seconds: Number(bag.second) || 0,
+    timeZone: zone,
   };
 }
 
-function isSchoolWeekday(date = new Date()) {
-  const { weekday } = schoolParts(date);
+function zonedWallTime(year, monthIndex, day, hour, minute, timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
+  const zone = isValidTimeZone(timeZone) ? timeZone : DEFAULT_SCHOOL_TIME_ZONE;
+  const wanted = Date.UTC(year, monthIndex, day, hour, minute, 0);
+  let utc = wanted;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const parts = schoolParts(new Date(utc), zone);
+    const wallAsUtc = Date.UTC(parts.year, parts.month, parts.date, parts.hours, parts.minutes, parts.seconds);
+    utc = wanted - (wallAsUtc - utc);
+  }
+  return new Date(utc);
+}
+
+function isSchoolWeekday(date = new Date(), timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
+  const { weekday } = schoolParts(date, timeZone);
   return weekday >= 1 && weekday <= 5;
 }
 
-function schoolDayBounds(date = new Date()) {
-  const parts = schoolParts(date);
-  const startMs = Date.UTC(parts.year, parts.month, parts.date) - SCHOOL_OFFSET_MS;
+function schoolDayBounds(date = new Date(), timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
+  const parts = schoolParts(date, timeZone);
+  const start = zonedWallTime(parts.year, parts.month, parts.date, 0, 0, parts.timeZone);
+  const next = zonedWallTime(parts.year, parts.month, parts.date + 1, 0, 0, parts.timeZone);
   return {
-    start: new Date(startMs),
-    end: new Date(startMs + 24 * 60 * 60 * 1000 - 1),
+    start,
+    end: new Date(next.getTime() - 1),
   };
+}
+
+function schoolMonthBounds(year, month, timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
+  const zone = isValidTimeZone(timeZone) ? timeZone : DEFAULT_SCHOOL_TIME_ZONE;
+  const start = zonedWallTime(year, month - 1, 1, 0, 0, zone);
+  const next = zonedWallTime(year, month, 1, 0, 0, zone);
+  return { start, end: new Date(next.getTime() - 1) };
 }
 
 function previousSchoolWeekday(date = new Date()) {
@@ -42,8 +94,8 @@ function previousSchoolWeekday(date = new Date()) {
   return cursor;
 }
 
-function minutesNow(date = new Date()) {
-  const parts = schoolParts(date);
+function minutesNow(date = new Date(), timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
+  const parts = schoolParts(date, timeZone);
   return parts.hours * 60 + parts.minutes;
 }
 
@@ -157,7 +209,11 @@ function childDayView(record, date = new Date()) {
 }
 
 module.exports = {
+  DEFAULT_SCHOOL_TIME_ZONE,
   SCHOOL_OFFSET_MS,
+  isValidTimeZone,
+  zonedWallTime,
+  schoolMonthBounds,
   SCHOOL_START_MINUTES,
   WINDOW_MINUTES,
   DISMISSAL_MINUTES,

@@ -13,7 +13,7 @@ const {
   sendNotificationToUser,
 } = require("../../Helpers/notification");
 const { sendCommentNotification, sendLikeAndLoveNotification } = require("../../Helpers/sockets");
-const { assertPostModifyAccess } = require("../../Helpers/accessControl");
+const { assertPostModifyAccess, assertCanReadPost, canReadClassroom, postListMatch, assertCanAccessChild } = require("../../Helpers/accessControl");
 const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
 const mongoose = require('mongoose');
 
@@ -94,6 +94,9 @@ exports.getAllPosts = async (req, res) => {
         $match: { children: { $in: childrenIds } }
       });
     }
+
+    const audience = await postListMatch(req);
+    if (audience) finalAggregate.unshift({ $match: audience });
 
 
     finalAggregate.push(
@@ -209,6 +212,9 @@ exports.getAllPosts = async (req, res) => {
 
 exports.getAllClassPosts = async (req, res) => {
   try {
+    if (!(await canReadClassroom(req, req.params.id))) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
     const page = req.query.page || 1;
     const limit = req.query.limit || 10;
 
@@ -316,6 +322,7 @@ exports.getAllClassPosts = async (req, res) => {
 
 exports.getAllChildPosts = async (req, res) => {
   try {
+    if (!(await assertCanAccessChild(req, res, req.params.id))) return;
     const page = req.query.page || 1;
     const limit = req.query.limit || 10;
 
@@ -417,6 +424,7 @@ exports.likePost = async (req, res) => {
     if (!post) {
       return res.status(404).json(ApiResponse({}, "Post not found", false));
     }
+    if (!(await assertCanReadPost(req, res, post))) return;
 
     const likedIndex = post.likes.indexOf(userId);
     const isIndexExists = likedIndex !== -1;
@@ -455,6 +463,7 @@ exports.commentPost = async (req, res) => {
     if (!post) {
       return res.status(404).json(ApiResponse({}, "Post not found", false));
     }
+    if (!(await assertCanReadPost(req, res, post))) return;
 
     const newComment = new Comment({
       content,
@@ -671,6 +680,7 @@ exports.getPostById = async (req, res) => {
     if (!post) {
       return res.json(ApiResponse({}, "Post not found", false));
     }
+    if (!(await assertCanReadPost(req, res, post))) return;
 
     const commentsCount = await Comment.countDocuments({ post: post._id });
     const payload = post.toObject();
@@ -715,7 +725,9 @@ exports.updatePost = async (req, res) => {
 
     // Update post fields
     post.content = req.body.content || post.content || "";
-    // post.activity = req.body.activity || post.activity || "";
+    if (req.body.activity && mongoose.Types.ObjectId.isValid(req.body.activity)) {
+      post.activity = req.body.activity;
+    }
     post.children = req.body.children ? JSON.parse(req.body.children) : post.children || [];
     post.images = updatedImages;
     post.videos = updatedVideos;

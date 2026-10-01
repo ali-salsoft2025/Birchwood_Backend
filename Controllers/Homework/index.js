@@ -10,6 +10,7 @@ const {
   validateHomeworkAssignment,
   notifyHomeworkAssigned,
   homeworkLookupStages,
+  childIdList,
 } = require("../../Helpers/homeworkAssignment");
 const {
   assertCanAccessChild,
@@ -27,21 +28,34 @@ exports.addHomework = async (req, res) => {
       return res.status(400).json(ApiResponse({}, validationError, false));
     }
 
-    const homework = await Homework.create(payload);
+    const childIds = payload.assignee === "CHILD" ? childIdList(payload.childIds || payload.children) : [];
+    const created = [];
+    const base = { ...payload };
+    delete base.childIds;
 
-    await notifyHomeworkAssigned(homework);
+    if (payload.assignee === "CHILD") {
+      for (const childId of childIds) {
+        const homework = await Homework.create({ ...base, children: childId });
+        created.push(homework);
+        await notifyHomeworkAssigned(homework);
+      }
+    } else {
+      const homework = await Homework.create(base);
+      created.push(homework);
+      await notifyHomeworkAssigned(homework);
+    }
 
     if (req.isAdmin) {
       sendNotificationToAdmin(
         "New homework created",
-        `${homework.title} was assigned (${homework.assignee === "CLASS" ? "class" : "student"})`,
+        `${payload.title} was assigned (${payload.assignee === "CLASS" ? "class" : "student"})`,
         "NOTIFICATION"
       );
     }
 
     return res
       .status(201)
-      .json(ApiResponse({ homework }, "Homework created successfully", true));
+      .json(ApiResponse({ homework: created[0], homeworks: created }, "Homework created successfully", true));
   } catch (error) {
     return res.json(
       ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false)

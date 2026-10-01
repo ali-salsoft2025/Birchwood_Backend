@@ -53,7 +53,7 @@ exports.updateProfile = async (req, res) => {
 
     const teacher = await Teacher.findByIdAndUpdate(req.user._id, updates, {
       new: true,
-    });
+    }).populate("classroom");
     if (!teacher) {
       return res.json(ApiResponse({}, "No Teacher found", false));
     }

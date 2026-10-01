@@ -37,6 +37,10 @@ const timeTableSchema = new Schema(
       type: String,
       required: false,
     },
+    onDate: {
+      type: String,
+      default: "",
+    },
   },
   { timestamps: true }
 );

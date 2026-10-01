@@ -11,7 +11,7 @@ exports.signin = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    Teacher.findOne({ email })
+    Teacher.findOne({ email }).populate("classroom")
       .then((user) => {
         if (!user) {
           return res.json(
