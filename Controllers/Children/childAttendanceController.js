@@ -27,6 +27,8 @@ const {
   childDayView,
   isSchoolWeekday,
   schoolDayBounds,
+  schoolMonthBounds,
+  schoolParts,
   attendanceWindow,
   scheduleLabels,
 } = require("../../Helpers/schoolDay");
@@ -297,16 +299,11 @@ exports.getAttendanceByMonth = async (req, res) => {
   try {
     let { month, year } = req.query;
 
-    const currentDate = moment.utc();
-    month = month ? parseInt(month, 10) : currentDate.month() + 1; // Moment.js months are zero-based
-    year = year ? parseInt(year, 10) : currentDate.year();
+    const schoolNow = schoolParts(new Date());
+    month = month ? parseInt(month, 10) : schoolNow.month + 1;
+    year = year ? parseInt(year, 10) : schoolNow.year;
 
-    // Ensure month is in two-digit format (e.g., 01, 02, ..., 12)
-    const monthString = month.toString().padStart(2, '0');
-
-    // Define start and end of the month in **UTC**
-    const startOfMonth = moment.utc(`${year}-${monthString}-01`, "YYYY-MM-DD").startOf("month").toDate();
-    const endOfMonth = moment.utc(`${year}-${monthString}-01`, "YYYY-MM-DD").endOf("month").toDate();
+    const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(year, month);
 
     const currentChild = await Children.findById(req.params.child).populate("classroom");
     if (!currentChild) {
@@ -364,20 +361,18 @@ exports.getMonthlyAttendanceStats = async (req, res) => {
   try {
     let { month, year } = req.query;
 
-    const currentDate = moment();
+    const schoolNow = schoolParts(new Date());
     if (!month) {
-      month = (currentDate.month() + 1).toString(); // Moment.js months are zero-based
+      month = String(schoolNow.month + 1);
     }
     if (!year) {
-      year = currentDate.year().toString();
+      year = String(schoolNow.year);
     }
- 
-    // OLD CODE BY ALI
-    // const startOfMonth = moment(`${parseInt(year, 10)}-${parseInt(month, 10)}-01`, "YYYY-MM-DD").startOf("month").startOf('day').toDate();
-    // const endOfMonth = moment(`${parseInt(year, 10)}-${parseInt(month, 10)}-01`, "YYYY-MM-DD").endOf("month").endOf('day').toDate();
-   
-    const startOfMonth = moment.utc(`${parseInt(year, 10)}-${parseInt(month, 10)}-01`, "YYYY-MM-DD").startOf("month").toDate();
-    const endOfMonth = moment.utc(`${parseInt(year, 10)}-${parseInt(month, 10)}-01`, "YYYY-MM-DD").endOf("month").toDate();
+
+    const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(
+      parseInt(year, 10),
+      parseInt(month, 10)
+    );
    
    const attendanceStats = await Attendance.aggregate([
     {

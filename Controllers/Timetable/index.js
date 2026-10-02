@@ -244,8 +244,16 @@ exports.copyTimetable = async (req, res) => {
     if (source >= target && mode === "day") {
       return res.status(400).json(ApiResponse({}, "Copy from an earlier date", false));
     }
+    const dayNames = { MON: "Monday", TUE: "Tuesday", WED: "Wednesday", THU: "Thursday", FRI: "Friday" };
+    if (mode === "day" && weekdayKey(source) !== weekdayKey(target)) {
+      const name = dayNames[weekdayKey(target)] || "weekday";
+      return res.status(400).json(ApiResponse({}, `Copy this ${name} from a previous ${name}`, false));
+    }
 
     const slots = await Timetable.find({ classroom }).lean();
+    if (mode === "day" && !slotsForDate(slots, source).length) {
+      return res.status(400).json(ApiResponse({}, "Nothing to copy from that day", false));
+    }
     const pairs = [];
     if (mode === "day") {
       pairs.push([source, target]);
