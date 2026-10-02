@@ -42,9 +42,56 @@ function emitToTicket(ticketId, event, payload) {
   io.to(ROOMS.ticket(ticketId)).emit(event, payload);
 }
 
-function emitChatMessage(chatId, message) {
+function plainId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return String(value._id || value);
+}
+
+function plainMessage(message) {
+  if (!message) return message;
+  const plain =
+    typeof message.toObject === "function" ? message.toObject() : { ...message };
+  if (plain._id) plain._id = plainId(plain._id);
+  if (plain.chat) plain.chat = plainId(plain.chat);
+  if (plain.sender && typeof plain.sender !== "object") {
+    plain.sender = plainId(plain.sender);
+  } else if (plain.sender && plain.sender._id) {
+    plain.sender = { ...plain.sender, _id: plainId(plain.sender._id) };
+  }
+  return plain;
+}
+
+function emitChatMessage(chatId, message, memberIds = []) {
   if (!io || !chatId || !message) return;
-  io.to(ROOMS.chat(chatId)).emit("message", message);
+  const payload = plainMessage(message);
+  const id = String(chatId);
+  io.to(ROOMS.chat(id)).emit("message", payload);
+  const seen = new Set();
+  (memberIds || []).forEach((memberId) => {
+    const key = plainId(memberId);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    io.to(ROOMS.user(key)).emit("message", payload);
+  });
+}
+
+function emitChatTyping(chatId, event, memberIds = [], senderId = "") {
+  if (!io || !chatId || !event) return;
+  const payload = {
+    chatId: String(chatId),
+    userId: plainId(event.userId),
+    typing: Boolean(event.typing),
+    name: String(event.name || "").slice(0, 80),
+  };
+  const sender = plainId(senderId);
+  const seen = new Set();
+  (memberIds || []).forEach((memberId) => {
+    const key = plainId(memberId);
+    if (!key || key === sender || seen.has(key)) return;
+    seen.add(key);
+    io.to(ROOMS.user(key)).emit("chat:typing", payload);
+  });
 }
 
 function emitAdminNotification(notification) {
@@ -54,9 +101,21 @@ function emitAdminNotification(notification) {
   });
 }
 
+function plainNotification(notification) {
+  if (!notification) return notification;
+  const plain =
+    typeof notification.toObject === "function"
+      ? notification.toObject()
+      : { ...notification };
+  if (plain._id) plain._id = String(plain._id);
+  if (plain.broadcastId) plain.broadcastId = String(plain.broadcastId);
+  if (plain.assignee) plain.assignee = String(plain.assignee);
+  return plain;
+}
+
 function emitUserNotification(userId, notification) {
   emitToUser(userId, SOCKET_EVENTS.NOTIFICATION_NEW, {
-    notification,
+    notification: plainNotification(notification),
     audience: "user",
   });
 }
@@ -117,6 +176,7 @@ module.exports = {
   emitToUser,
   emitToTicket,
   emitChatMessage,
+  emitChatTyping,
   emitAdminNotification,
   emitUserNotification,
   emitAdminNotificationRead,

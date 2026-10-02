@@ -2,6 +2,7 @@
 //Models
 const Post = require("../../Models/Post");
 const Comment = require("../../Models/Comment");
+const Children = require("../../Models/Children");
 const moment = require("moment");
 const fs = require("fs")
 //Helpers
@@ -325,9 +326,20 @@ exports.getAllChildPosts = async (req, res) => {
     if (!(await assertCanAccessChild(req, res, req.params.id))) return;
     const page = req.query.page || 1;
     const limit = req.query.limit || 10;
+    const child = await Children.findById(req.params.id).select("classroom").lean();
+    const childId = new mongoose.Types.ObjectId(req.params.id);
+    const audience = [{ children: childId }];
+    if (child?.classroom) {
+      audience.push({ classroom: child.classroom });
+    }
 
     const finalAggregate = [
-      { $match: { children: new mongoose.Types.ObjectId(req.params.id) } },
+      {
+        $match: {
+          status: { $ne: "INACTIVE" },
+          $or: audience,
+        },
+      },
     ];
 
     finalAggregate.push(

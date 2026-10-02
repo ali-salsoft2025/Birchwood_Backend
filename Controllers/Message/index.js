@@ -56,7 +56,7 @@ exports.createMessage = async (req, res) => {
     await chat.save()
 
     const payload = message.toObject ? message.toObject() : message;
-    emitChatMessage(String(chatId), payload);
+    emitChatMessage(String(chatId), payload, [chat.teacher, chat.parent]);
 
     return res.json(
         ApiResponse(

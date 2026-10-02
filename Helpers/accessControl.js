@@ -96,23 +96,23 @@ async function canReadClassroom(req, classroomId) {
 async function canReadPost(req, post) {
   if (!post) return false;
   if (req.isAdmin) return true;
-  const type = String(post.type || "").toUpperCase();
   const classroomId = post.classroom?._id || post.classroom;
   const rawChildren = post.children;
   const childIds = (Array.isArray(rawChildren) ? rawChildren : rawChildren ? [rawChildren] : [])
     .map((item) => item?._id || item)
     .filter(Boolean);
 
-  if (type === "CHILD" && childIds.length) {
-    if (req.userRole === "teacher") return canReadClassroom(req, classroomId);
-    if (req.userRole === "parent") {
-      for (const id of childIds) {
-        if (await canAccessChild(req, id)) return true;
-      }
-    }
-    return false;
+  if (req.userRole === "teacher") {
+    return canReadClassroom(req, classroomId);
   }
-  return canReadClassroom(req, classroomId);
+
+  if (req.userRole === "parent") {
+    if (classroomId && (await canReadClassroom(req, classroomId))) return true;
+    for (const id of childIds) {
+      if (await canAccessChild(req, id)) return true;
+    }
+  }
+  return false;
 }
 
 async function assertCanReadPost(req, res, post) {
@@ -130,12 +130,12 @@ async function postListMatch(req) {
   }
   if (req.userRole === "parent") {
     const kids = await Children.find({ parent: req.user._id }).select("_id classroom").lean();
-    return {
-      $or: [
-        { type: "CLASS", classroom: { $in: kids.map((item) => item.classroom).filter(Boolean) } },
-        { type: "CHILD", children: { $in: kids.map((item) => item._id) } },
-      ],
-    };
+    const childIds = kids.map((item) => item._id);
+    const classrooms = kids.map((item) => item.classroom).filter(Boolean);
+    if (!childIds.length) return { _id: { $exists: false } };
+    const audience = [{ children: { $in: childIds } }];
+    if (classrooms.length) audience.push({ classroom: { $in: classrooms } });
+    return { $or: audience };
   }
   return { _id: { $exists: false } };
 }

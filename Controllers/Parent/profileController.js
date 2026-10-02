@@ -113,7 +113,9 @@ exports.getAllMyChildren = async (req, res) => {
     const children = (parent.childrens || []).map((child) => {
       const plain = child.toObject ? child.toObject() : child;
       const record = byChild.get(String(plain._id)) || null;
-      return { ...plain, ...childDayView(record, now) };
+      const view = childDayView(record, now);
+      const checkedIn = view.todayStatus === "PRESENT" || view.todayStatus === "LATE";
+      return { ...plain, ...view, checkIn: checkedIn };
     });
 
     return res
