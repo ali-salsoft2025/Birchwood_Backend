@@ -284,6 +284,11 @@ exports.getSchedule = async (req, res) => {
       const allowed = rules.leaveQuota[key];
       quota[key] = { allowed, used: used[key] || 0, remaining: Math.max(0, allowed - (used[key] || 0)) };
     });
+    const { start, end } = schoolDayBounds(now, timeZone);
+    const todayAttendance = await Attendance.findOne({
+      teacher: req.user._id,
+      checkIn: { $gte: start, $lte: end },
+    });
     return res.json(
       ApiResponse(
         {
@@ -293,6 +298,7 @@ exports.getSchedule = async (req, res) => {
           checkInOpen: punch.checkInOpen,
           checkoutOpen: punch.checkoutOpen,
           quota,
+          todayAttendance,
         },
         "",
         true

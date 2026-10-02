@@ -11,6 +11,7 @@ const {
   initSocketEmitter,
   SOCKET_EVENTS,
   ROOMS,
+  emitChatTyping,
 } = require("../Helpers/socketEmitter");
 const { loadTicketForAccess, canAccessTicket } = require("../Helpers/supportAccess");
 const Chat = require("../Models/Chat");
@@ -151,6 +152,31 @@ function initSocket(server) {
         if (typeof ack === "function") {
           ack({ ok: false, message: error.message || "Unable to join chat" });
         }
+      }
+    });
+
+    socket.on("chat:typing", async (payload = {}) => {
+      try {
+        const chatId = String(payload.chatId || "");
+        if (!chatId || !socket.data.userId) return;
+        const chat = await Chat.findById(chatId).select("teacher parent").lean();
+        if (!chat) return;
+        const userId = String(socket.data.userId);
+        const allowed =
+          String(chat.teacher) === userId || String(chat.parent) === userId;
+        if (!allowed) return;
+        emitChatTyping(
+          chatId,
+          {
+            userId,
+            typing: Boolean(payload.typing),
+            name: payload.name,
+          },
+          [chat.teacher, chat.parent],
+          userId
+        );
+      } catch (error) {
+        // Typing is best-effort and must not drop the socket.
       }
     });
 
