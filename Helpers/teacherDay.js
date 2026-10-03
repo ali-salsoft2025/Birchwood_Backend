@@ -68,6 +68,49 @@ function describeTeacherRules(rules) {
   };
 }
 
+function teacherDayPlan({ weekday, duty, teacherHoliday, rules, date, timeZone = DEFAULT_SCHOOL_TIME_ZONE }) {
+  const base = normalizeTeacherRules(rules);
+  if (duty && Number.isFinite(duty.checkInMinutes)) {
+    const dayRules = normalizeTeacherRules({
+      ...base,
+      checkInMinutes: duty.checkInMinutes,
+      checkOutMinutes: Number.isFinite(duty.checkOutMinutes) ? duty.checkOutMinutes : base.checkOutMinutes,
+    });
+    return {
+      off: false,
+      special: true,
+      reason: null,
+      name: duty.name || "Special day",
+      rules: dayRules,
+      punch: punchState(date, dayRules, timeZone),
+    };
+  }
+  const weekend = weekday === 0 || weekday === 6;
+  if (weekend || teacherHoliday) {
+    return {
+      off: true,
+      special: false,
+      reason: weekend ? "weekend" : "holiday",
+      name: teacherHoliday?.name || "",
+      rules: base,
+      punch: {
+        minutes: minutesNow(date, timeZone),
+        checkInOpen: false,
+        late: false,
+        checkoutOpen: false,
+      },
+    };
+  }
+  return {
+    off: false,
+    special: false,
+    reason: null,
+    name: "",
+    rules: base,
+    punch: punchState(date, base, timeZone),
+  };
+}
+
 function punchState(date, rules, timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
   const normalized = normalizeTeacherRules(rules);
   const minutes = minutesNow(date, timeZone);
@@ -100,6 +143,7 @@ module.exports = {
   clockToMinutes,
   minutesToClockInput,
   describeTeacherRules,
+  teacherDayPlan,
   punchState,
   quotaAllows,
   calendarYearBounds,

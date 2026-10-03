@@ -2,6 +2,7 @@ const assert = require("assert");
 const {
   normalizeTeacherRules,
   punchState,
+  teacherDayPlan,
   quotaAllows,
   clockToMinutes,
 } = require("../Helpers/teacherDay");
@@ -42,6 +43,40 @@ check("quota blocks a third sick day", quotaAllows(2, 1, rules.leaveQuota.SICK) 
 check("quota allows the first casual day", quotaAllows(0, 1, rules.leaveQuota.CASUAL) === true);
 check("on-time window label ends at 7:15", rules.onTimeUntilMinutes === 7 * 60 + 15);
 check("check-in opens one hour earlier", rules.checkInOpensMinutes === 6 * 60);
+
+const saturday = teacherDayPlan({ weekday: 6, rules, date: atKarachi("09:00"), timeZone: "Asia/Karachi" });
+check("a normal saturday is off", saturday.off === true && saturday.reason === "weekend" && saturday.punch.checkInOpen === false);
+const holiday = teacherDayPlan({
+  weekday: 4,
+  teacherHoliday: { name: "Eid" },
+  rules,
+  date: atKarachi("09:00"),
+  timeZone: "Asia/Karachi",
+});
+check("a teacher holiday is off", holiday.off === true && holiday.reason === "holiday");
+const duty = {
+  name: "Saturday duty",
+  checkInMinutes: 12 * 60,
+  checkOutMinutes: 16 * 60,
+};
+const calledIn = (clock) =>
+  teacherDayPlan({ weekday: 6, duty, rules, date: atKarachi(clock), timeZone: "Asia/Karachi" });
+check("a saturday duty day is a work day", calledIn("12:00").off === false && calledIn("12:00").special === true);
+check("duty check-in opens one hour before 12", calledIn("10:59").punch.checkInOpen === false && calledIn("11:00").punch.checkInOpen === true);
+check("12:15 on a noon duty is still on time", calledIn("12:15").punch.late === false);
+check("12:16 on a noon duty is late", calledIn("12:16").punch.late === true);
+check("duty checkout follows 4:00 PM", calledIn("15:59").punch.checkoutOpen === false && calledIn("16:00").punch.checkoutOpen === true);
+check(
+  "a duty day overrides a teacher holiday",
+  teacherDayPlan({
+    weekday: 4,
+    teacherHoliday: { name: "Eid" },
+    duty,
+    rules,
+    date: atKarachi("12:00"),
+    timeZone: "Asia/Karachi",
+  }).off === false
+);
 
 const { schoolParts, zonedWallTime } = require("../Helpers/schoolDay");
 const midnightPkt = new Date("2026-09-27T19:00:00.000Z");

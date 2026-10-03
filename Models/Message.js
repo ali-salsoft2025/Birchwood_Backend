@@ -21,6 +21,21 @@ const messageSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "chat",
     },
+    deletedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+      },
+    ],
+    deletedForEveryone: {
+      type: Boolean,
+      default: false,
+    },
+    attachment: {
+      name: { type: String, default: "" },
+      mime: { type: String, default: "" },
+      size: { type: Number, default: 0 },
+      file: { type: String, default: "" },
+    },
   },
   { timestamps: true }
 );

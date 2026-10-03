@@ -76,6 +76,24 @@ function emitChatMessage(chatId, message, memberIds = []) {
   });
 }
 
+function emitChatMessageDeleted(chatId, payload, memberIds = []) {
+  if (!io || !chatId || !payload) return;
+  const body = {
+    ...payload,
+    _id: plainId(payload._id),
+    chat: String(chatId),
+  };
+  const id = String(chatId);
+  io.to(ROOMS.chat(id)).emit("message:deleted", body);
+  const seen = new Set();
+  (memberIds || []).forEach((memberId) => {
+    const key = plainId(memberId);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    io.to(ROOMS.user(key)).emit("message:deleted", body);
+  });
+}
+
 function emitChatTyping(chatId, event, memberIds = [], senderId = "") {
   if (!io || !chatId || !event) return;
   const payload = {
@@ -176,6 +194,7 @@ module.exports = {
   emitToUser,
   emitToTicket,
   emitChatMessage,
+  emitChatMessageDeleted,
   emitChatTyping,
   emitAdminNotification,
   emitUserNotification,

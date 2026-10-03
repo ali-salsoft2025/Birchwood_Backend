@@ -129,7 +129,7 @@ function scheduleLabels() {
   };
 }
 
-function childDayView(record, date = new Date()) {
+function childDayView(record, date = new Date(), options = {}) {
   const labels = scheduleLabels();
   const window = attendanceWindow(date);
   const base = {
@@ -157,6 +157,19 @@ function childDayView(record, date = new Date()) {
   const checkIn = record?.checkIn || null;
   const checkOut = record?.checkOut || null;
 
+  if (options.schoolClosed && status !== "PRESENT" && status !== "LEAVE") {
+    return {
+      ...base,
+      todayStatus: "HOLIDAY",
+      todayCheckIn: null,
+      todayCheckOut: null,
+      todayPrompt: null,
+      attendanceDot: "none",
+      checkInOpen: false,
+      canLeave: false,
+    };
+  }
+
   if (status === "LEAVE") {
     return {
       ...base,
@@ -165,6 +178,20 @@ function childDayView(record, date = new Date()) {
       todayCheckOut: null,
       todayPrompt: null,
       attendanceDot: "blue",
+    };
+  }
+
+  if (status === "ABSENT" || (!status && window.late)) {
+    return {
+      ...base,
+      todayStatus: "ABSENT",
+      todayCheckIn: null,
+      todayCheckOut: null,
+      todayPrompt: window.checkInOpen ? "CHECKIN" : null,
+      attendanceDot: "red",
+      checkInOpen: window.checkInOpen,
+      checkInLate: window.late,
+      canLeave: true,
     };
   }
 
@@ -194,17 +221,16 @@ function childDayView(record, date = new Date()) {
     };
   }
 
-  const unmarked = status !== "ABSENT";
   return {
     ...base,
-    todayStatus: status === "ABSENT" ? "ABSENT" : "UNMARKED",
+    todayStatus: "UNMARKED",
     todayCheckIn: null,
     todayCheckOut: null,
-    todayPrompt: window.checkInOpen && unmarked ? "CHECKIN" : null,
+    todayPrompt: window.checkInOpen ? "CHECKIN" : null,
     attendanceDot: "red",
     checkInOpen: window.checkInOpen,
-    checkInLate: window.late,
-    canLeave: unmarked,
+    checkInLate: false,
+    canLeave: true,
   };
 }
 

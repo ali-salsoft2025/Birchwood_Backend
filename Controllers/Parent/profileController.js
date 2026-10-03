@@ -86,8 +86,8 @@ exports.changePassword = async (req, res) => {
 
 exports.getAllMyChildren = async (req, res) => {
   try {
-    const Attendance = require("../../Models/Attendance");
-    const { schoolDayBounds, childDayView } = require("../../Helpers/schoolDay");
+    const { childDayView } = require("../../Helpers/schoolDay");
+    const { attachTodayAttendance } = require("../../Helpers/autoAbsent");
     const parent = await Parent.findById(req.user._id).populate({
       path: "childrens",
       populate: {
@@ -101,19 +101,12 @@ exports.getAllMyChildren = async (req, res) => {
     }
 
     const now = new Date();
-    const { start, end } = schoolDayBounds(now);
-    const ids = (parent.childrens || []).map((child) => child._id);
-    const records = ids.length
-      ? await Attendance.find({
-          children: { $in: ids },
-          checkIn: { $gte: start, $lte: end },
-        }).lean()
-      : [];
-    const byChild = new Map(records.map((record) => [String(record.children), record]));
-    const children = (parent.childrens || []).map((child) => {
-      const plain = child.toObject ? child.toObject() : child;
-      const record = byChild.get(String(plain._id)) || null;
-      const view = childDayView(record, now);
+    const { studentsClosedForDuty } = require("../../Helpers/teacherWorkDay");
+    const { DEFAULT_SCHOOL_TIME_ZONE } = require("../../Helpers/schoolDay");
+    const schoolClosed = await studentsClosedForDuty(now, DEFAULT_SCHOOL_TIME_ZONE);
+    const withToday = await attachTodayAttendance(parent.childrens || [], now);
+    const children = withToday.map((plain) => {
+      const view = childDayView(plain.todayAttendance, now, { schoolClosed });
       const checkedIn = view.todayStatus === "PRESENT" || view.todayStatus === "LATE";
       return { ...plain, ...view, checkIn: checkedIn };
     });

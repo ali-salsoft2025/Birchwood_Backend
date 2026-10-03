@@ -223,6 +223,8 @@ exports.getChildrenByClassroom = async (req, res) => {
     req.query.classroom = req.params.id;
     const aggregate = Children.aggregate(listAggregate(req));
     const children = await Children.aggregatePaginate(aggregate, { page, limit });
+    const { attachTodayAttendance } = require("../../Helpers/autoAbsent");
+    children.docs = await attachTodayAttendance(children.docs || []);
     return res.json(ApiResponse(children));
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
