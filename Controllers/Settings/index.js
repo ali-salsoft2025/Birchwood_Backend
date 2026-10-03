@@ -10,6 +10,7 @@ const {
 } = require("../../Helpers/teacherDay");
 const { DEFAULT_SCHOOL_TIME_ZONE, isValidTimeZone, formatClock } = require("../../Helpers/schoolDay");
 const { minutesToClockInput } = require("../../Helpers/teacherDay");
+const { createAdminNotification } = require("../../Helpers/notification");
 
 const TOGGLEABLE = [
   "fees",
@@ -155,6 +156,33 @@ exports.updateTeacherRules = async (req, res) => {
   }
 };
 
+function prettyDay(key) {
+  const [year, month, day] = String(key || "").split("-").map(Number);
+  if (!year || !month || !day) return key;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+async function notifyTeachersOfOpenDay(day) {
+  const when =
+    day.startKey === day.endKey
+      ? prettyDay(day.startKey)
+      : `${prettyDay(day.startKey)} to ${prettyDay(day.endKey)}`;
+  const checkIn = formatClock(day.checkInMinutes);
+  const checkOut = formatClock(day.checkOutMinutes);
+  await createAdminNotification({
+    title: "Open day for teachers",
+    content: `${day.name || "Open day"}: ${when} is open for all teachers. Check in at ${checkIn} and check out at ${checkOut}.`,
+    type: "ANNOUNCEMENT",
+    sendTo: "TEACHERS",
+  });
+}
+
 function dutyPayload(day) {
   return {
     ...day,
@@ -191,7 +219,7 @@ exports.saveTeacherDutyDay = async (req, res) => {
       return res.status(400).json(ApiResponse({}, "Check-out must be after check-in", false));
     }
     const payload = {
-      name: String(body.name || "Special day").trim() || "Special day",
+      name: String(body.name || "Open weekend").trim() || "Open weekend",
       startKey,
       endKey,
       checkInMinutes,
@@ -203,7 +231,22 @@ exports.saveTeacherDutyDay = async (req, res) => {
     if (!day) {
       return res.status(404).json(ApiResponse({}, "Special day not found", false));
     }
-    return res.json(ApiResponse({ day: dutyPayload(day) }, "Special day saved", true));
+    let noticeSent = false;
+    try {
+      await notifyTeachersOfOpenDay(day);
+      noticeSent = true;
+    } catch (noticeError) {
+      console.error("Open day notice failed:", noticeError.message);
+    }
+    return res.json(
+      ApiResponse(
+        { day: dutyPayload(day), noticeSent },
+        noticeSent
+          ? "Open day saved. Teachers were sent a notice."
+          : "Open day saved. The teacher notice could not be sent.",
+        true
+      )
+    );
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
   }
