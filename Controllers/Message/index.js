@@ -61,7 +61,10 @@ exports.createMessage = async (req, res) => {
 
     await message.save();
 
-    
+    // Push first. The unread write must not hold the socket event.
+    const payload = message.toObject ? message.toObject() : message;
+    emitChatMessage(String(chatId), payload, [chat.teacher, chat.parent]);
+
     chat.latestMessage = message._id;
     chat.hiddenFor = (chat.hiddenFor || []).filter(
       (id) => String(id) !== String(chat.teacher) && String(id) !== String(chat.parent)
@@ -73,9 +76,6 @@ exports.createMessage = async (req, res) => {
       chat.teacherUnread = (chat.teacherUnread || 0) + 1;
     }
     await chat.save()
-
-    const payload = message.toObject ? message.toObject() : message;
-    emitChatMessage(String(chatId), payload, [chat.teacher, chat.parent]);
 
     return res.json(
         ApiResponse(

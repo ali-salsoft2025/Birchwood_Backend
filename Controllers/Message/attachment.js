@@ -210,6 +210,8 @@ exports.finishAttachment = async (req, res) => {
       },
     });
     await message.save();
+    const payload = message.toObject();
+    emitChatMessage(String(chat._id), payload, [chat.teacher, chat.parent]);
     chat.latestMessage = message._id;
     chat.hiddenFor = (chat.hiddenFor || []).filter(
       (id) => String(id) !== String(chat.teacher) && String(id) !== String(chat.parent)
@@ -221,8 +223,6 @@ exports.finishAttachment = async (req, res) => {
       chat.teacherUnread = (chat.teacherUnread || 0) + 1;
     }
     await chat.save();
-    const payload = message.toObject();
-    emitChatMessage(String(chat._id), payload, [chat.teacher, chat.parent]);
     return res.json(ApiResponse({ message }, "File sent", true));
   } catch (error) {
     if (session) dropSession(String(uploadId), true);
