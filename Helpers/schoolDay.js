@@ -143,13 +143,34 @@ function childDayView(record, date = new Date(), options = {}) {
   };
 
   if (!isSchoolWeekday(date)) {
+    if (!options.openDuty) {
+      return {
+        ...base,
+        todayStatus: "WEEKEND",
+        todayCheckIn: null,
+        todayCheckOut: null,
+        todayPrompt: null,
+        attendanceDot: "none",
+      };
+    }
+    if (record?.status === "LEAVE") {
+      return {
+        ...base,
+        todayStatus: "LEAVE",
+        todayCheckIn: record.checkIn || null,
+        todayCheckOut: null,
+        todayPrompt: null,
+        attendanceDot: "blue",
+      };
+    }
     return {
       ...base,
-      todayStatus: "WEEKEND",
+      todayStatus: "OPEN",
       todayCheckIn: null,
       todayCheckOut: null,
       todayPrompt: null,
       attendanceDot: "none",
+      canLeave: true,
     };
   }
 
@@ -166,7 +187,7 @@ function childDayView(record, date = new Date(), options = {}) {
       todayPrompt: null,
       attendanceDot: "none",
       checkInOpen: false,
-      canLeave: false,
+      canLeave: true,
     };
   }
 
