@@ -211,7 +211,23 @@ exports.markLeave = async (req, res) => {
         { checkIn: { $gt: rangeEnd } },
       ],
     });
-    if (!quotaAllows(used, leaveDuration, allowed)) {
+    const { resolveTeacherDay } = require("../../Helpers/teacherWorkDay");
+    const workDays = [];
+    for (let i = 0; i < leaveDuration; i++) {
+      const cursor = new Date(startIndex + i * 86400000);
+      const yearNum = cursor.getUTCFullYear();
+      const monthIndex = cursor.getUTCMonth();
+      const dayNum = cursor.getUTCDate();
+      const probe = zonedWallTime(yearNum, monthIndex, dayNum, 12, 0, timeZone);
+      const plan = await resolveTeacherDay(probe, rules, timeZone);
+      if (!plan.off) {
+        workDays.push({ yearNum, monthIndex, dayNum });
+      }
+    }
+    if (!workDays.length) {
+      return res.status(400).json(ApiResponse({}, "Leave is only for school days", false));
+    }
+    if (!quotaAllows(used, workDays.length, allowed)) {
       const left = Math.max(0, allowed - used);
       return res.status(400).json(
         ApiResponse({}, `Only ${left} ${leaveType.toLowerCase()} leave day${left === 1 ? "" : "s"} left this year`, false)
@@ -221,12 +237,8 @@ exports.markLeave = async (req, res) => {
     let todayAttendance = null;
     const todayParts = schoolParts(new Date(), timeZone);
     
-    // Loop through each school day of leave and mark attendance
-    for (let i = 0; i < leaveDuration; i++) {
-      const cursor = new Date(startIndex + i * 86400000);
-      const yearNum = cursor.getUTCFullYear();
-      const monthIndex = cursor.getUTCMonth();
-      const dayNum = cursor.getUTCDate();
+    for (const day of workDays) {
+      const { yearNum, monthIndex, dayNum } = day;
       const dayStart = zonedWallTime(yearNum, monthIndex, dayNum, 0, 0, timeZone);
       const dayEnd = new Date(zonedWallTime(yearNum, monthIndex, dayNum + 1, 0, 0, timeZone).getTime() - 1);
 

@@ -85,8 +85,12 @@ function dropSession(uploadId, removeFile) {
 }
 
 exports.startAttachment = async (req, res) => {
-  const { chatId, fileName, mime, size } = req.body || {};
+  const { chatId, fileName, mime, size, duration, waveform } = req.body || {};
   const bytes = Number(size);
+  const seconds = Math.max(0, Math.round(Number(duration) || 0));
+  const wave = Array.isArray(waveform)
+    ? waveform.slice(0, 48).map((bar) => Math.max(0, Math.min(100, Math.round(Number(bar) || 0))))
+    : [];
   try {
     const described = describeFile(fileName, mime);
     if (!described) {
@@ -116,6 +120,8 @@ exports.startAttachment = async (req, res) => {
       fileName: String(fileName || `file${described.ext}`).slice(0, 120),
       mime: described.mime,
       size: bytes,
+      duration: seconds,
+      waveform: wave,
       stored,
       full,
       stream,
@@ -153,6 +159,8 @@ exports.chunkAttachment = async (req, res) => {
     });
     session.received += chunk.length;
     session.next += 1;
+    clearTimeout(session.timer);
+    session.timer = setTimeout(() => dropSession(uploadId, true), 2 * 60 * 1000);
     return res.json(ApiResponse({ received: session.received, total: session.size }, "Chunk saved", true));
   } catch (error) {
     dropSession(uploadId, true);
@@ -197,6 +205,8 @@ exports.finishAttachment = async (req, res) => {
         mime: session.mime,
         size: session.size,
         file: session.stored,
+        duration: session.duration || 0,
+        waveform: session.waveform || [],
       },
     });
     await message.save();

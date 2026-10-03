@@ -35,6 +35,8 @@ const messageSchema = new Schema(
       mime: { type: String, default: "" },
       size: { type: Number, default: 0 },
       file: { type: String, default: "" },
+      duration: { type: Number, default: 0 },
+      waveform: { type: [Number], default: [] },
     },
   },
   { timestamps: true }
