@@ -30,6 +30,12 @@ const schoolSettingsSchema = new Schema(
       notifications: { type: Boolean, default: true },
     },
     timeZone: { type: String, default: "Asia/Karachi" },
+    appInfo: {
+      teacherVersion: { type: String, default: "" },
+      parentVersion: { type: String, default: "" },
+      privacyPolicy: { type: String, default: "" },
+      termsOfUse: { type: String, default: "" },
+    },
     teacherAttendance: {
       checkInMinutes: { type: Number, default: 7 * 60 },
       graceMinutes: { type: Number, default: 15 },

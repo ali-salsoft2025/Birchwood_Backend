@@ -31,6 +31,8 @@ const {
   schoolParts,
   attendanceWindow,
   scheduleLabels,
+  zonedWallTime,
+  CHECKIN_ON_TIME_END_MINUTES,
 } = require("../../Helpers/schoolDay");
 
 async function ownsChild(req, child) {
@@ -63,6 +65,11 @@ exports.markCheckIn = async (req, res) => {
 
     if (!isSchoolWeekday(now)) {
       return res.status(400).json(ApiResponse({}, "Check-in is only needed on school days", false));
+    }
+    const { studentsClosedForDuty } = require("../../Helpers/teacherWorkDay");
+    const { DEFAULT_SCHOOL_TIME_ZONE } = require("../../Helpers/schoolDay");
+    if (await studentsClosedForDuty(now, DEFAULT_SCHOOL_TIME_ZONE)) {
+      return res.status(400).json(ApiResponse({}, "School is closed for students today", false));
     }
 
     const window = attendanceWindow(now);
@@ -115,10 +122,13 @@ exports.markCheckIn = async (req, res) => {
     await currentChild.save();
     childCheckinNotification(markedBy === "PARENT" ? teacher : parent, currentChild, attendance);
 
+    const message = window.late
+      ? "Checked in late"
+      : "Check-in Marked Successfully";
     return res.status(200).json(ApiResponse({
       newAttendance: attendance,
       ...childDayView(attendance, now),
-    }, "Check-in Marked Successfully", true));
+    }, message, true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, errorHandler(error) || error.message, false));
   }
@@ -244,6 +254,109 @@ exports.markLeave = async (req, res) => {
     childLeaveNotification(markedBy === "PARENT" ? teacher : parent, currentChild, todayAttendance);
 
     return res.status(200).json(ApiResponse({todayAttendance}, "Leave Marked Successfully", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, errorHandler(error) || error.message, false));
+  }
+};
+
+function clockStamp(schoolDate, clock) {
+  const match = String(schoolDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const time = String(clock || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match || !time) return null;
+  const hours = Number(time[1]);
+  const minutes = Number(time[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return {
+    date: zonedWallTime(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      hours,
+      minutes
+    ),
+    minutes: hours * 60 + minutes,
+  };
+}
+
+function schoolDateKey(date = new Date()) {
+  const parts = schoolParts(date);
+  const month = String(parts.month + 1).padStart(2, "0");
+  const day = String(parts.date).padStart(2, "0");
+  return `${parts.year}-${month}-${day}`;
+}
+
+function readFlag(value) {
+  if (value === true || value === "true" || value === 1 || value === "1") return true;
+  if (value === false || value === "false" || value === 0 || value === "0") return false;
+  return null;
+}
+
+exports.correctDay = async (req, res) => {
+  try {
+    if (req.userRole === "parent") {
+      return res.status(403).json(ApiResponse({}, "Only school staff can set a custom time", false));
+    }
+
+    const { children, checkInClock, checkOutClock, leaveReason } = req.body;
+    const now = new Date();
+    const schoolDate = req.body.schoolDate || schoolDateKey(now);
+    const currentChild = await Children.findById(children).populate("classroom");
+    if (!currentChild) {
+      return res.status(404).json(ApiResponse({}, "Child Not Found", false));
+    }
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "You can only mark students in your class", false));
+    }
+
+    const arrived = clockStamp(schoolDate, checkInClock);
+    if (!arrived) {
+      return res.status(400).json(ApiResponse({}, "Add a check-in time", false));
+    }
+    const left = checkOutClock ? clockStamp(schoolDate, checkOutClock) : null;
+    if (checkOutClock && !left) {
+      return res.status(400).json(ApiResponse({}, "Check-out time is not valid", false));
+    }
+    if (left && left.date < arrived.date) {
+      return res.status(400).json(ApiResponse({}, "Check-out must be after check-in", false));
+    }
+
+    const lateFlag = readFlag(req.body.late);
+    const late = lateFlag == null ? arrived.minutes > CHECKIN_ON_TIME_END_MINUTES : lateFlag;
+    const day = schoolDayBounds(arrived.date);
+    let attendance = await Attendance.findOne({
+      children,
+      checkIn: { $gte: day.start, $lte: day.end },
+    });
+
+    const next = {
+      status: "PRESENT",
+      checkIn: arrived.date,
+      checkOut: left ? left.date : null,
+      late,
+      markedBy: req.userRole === "teacher" ? "TEACHER" : "ADMIN",
+      leaveReason: "",
+      earlyPickup: false,
+      pickupReason: left && leaveReason ? String(leaveReason).trim() : "",
+      classroom: currentChild.classroom?._id || currentChild.classroom,
+    };
+
+    if (attendance) {
+      Object.assign(attendance, next);
+      await attendance.save();
+    } else {
+      attendance = await Attendance.create({ children, ...next });
+    }
+
+    const today = schoolDayBounds(now);
+    if (arrived.date >= today.start && arrived.date <= today.end) {
+      currentChild.checkIn = !next.checkOut;
+      await currentChild.save();
+    }
+
+    return res.status(200).json(ApiResponse({
+      newAttendance: attendance,
+      ...childDayView(attendance, now),
+    }, "Attendance updated", true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, errorHandler(error) || error.message, false));
   }

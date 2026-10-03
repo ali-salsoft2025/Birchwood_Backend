@@ -115,10 +115,16 @@ check(
 
 const lateMorning = at("2026-09-24T04:30:00.000Z");
 check(
-  "9:30 check-in is late but still open",
+  "9:30 with no check-in is absent, and a check-in is still allowed as late",
   attendanceWindow(lateMorning).late === true &&
+    childDayView(null, lateMorning).todayStatus === "ABSENT" &&
     childDayView(null, lateMorning).checkInLate === true &&
     childDayView(null, lateMorning).todayPrompt === "CHECKIN"
+);
+check(
+  "a saved absent record can still be checked in",
+  childDayView({ status: "ABSENT" }, lateMorning).todayPrompt === "CHECKIN" &&
+    childDayView({ status: "ABSENT" }, lateMorning).todayStatus === "ABSENT"
 );
 
 const noon = at("2026-09-24T07:00:00.000Z");

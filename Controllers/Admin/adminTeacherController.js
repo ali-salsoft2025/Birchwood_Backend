@@ -371,18 +371,38 @@ exports.getTeacherAttendanceByMonth = async (req, res) => {
   }
 };
 
+function readLate(value) {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return null;
+}
+
+async function teacherLate(status, stamp, explicit, timeZone) {
+  if (status !== "PRESENT") return false;
+  if (explicit != null) return explicit;
+  if (!stamp) return false;
+  const { describeTeacherRules } = require("../../Helpers/teacherDay");
+  const { minutesNow } = require("../../Helpers/schoolDay");
+  const doc = await SchoolSettings.getSingleton();
+  const rules = describeTeacherRules(doc.teacherAttendance || {});
+  return minutesNow(stamp, timeZone) > rules.onTimeUntilMinutes;
+}
+
 exports.markAttendance = async (req, res) => {
   try {
-    const { status, checkIn, checkOut, leaveReason, schoolDate, checkInClock, checkOutClock } = req.body;
+    const { status, checkIn, checkOut, leaveReason, schoolDate, checkInClock, checkOutClock, late } = req.body;
     const timeZone = await schoolZone();
+    const savedStatus = status || "PRESENT";
     const schoolCheckIn = wallStamp(schoolDate, checkInClock || "00:00", timeZone);
     const schoolCheckOut = wallStamp(schoolDate, checkOutClock, timeZone);
+    const checkInAt = schoolCheckIn || (checkIn ? new Date(Number(checkIn) || checkIn) : new Date());
     const attendance = await TeacherAttendance.create({
       teacher: req.params.id,
-      status: status || "PRESENT",
-      checkIn: schoolCheckIn || (checkIn ? new Date(Number(checkIn) || checkIn) : new Date()),
-      checkOut: schoolCheckOut || (checkOut ? new Date(Number(checkOut) || checkOut) : undefined),
+      status: savedStatus,
+      checkIn: checkInAt,
+      checkOut: savedStatus === "PRESENT" ? schoolCheckOut || (checkOut ? new Date(Number(checkOut) || checkOut) : null) : null,
       leaveReason: leaveReason || "",
+      late: await teacherLate(savedStatus, checkInAt, readLate(late), timeZone),
     });
     return res.json(ApiResponse({ attendance }, "Attendance added successfully", true));
   } catch (error) {
@@ -392,17 +412,19 @@ exports.markAttendance = async (req, res) => {
 
 exports.updateAttendance = async (req, res) => {
   try {
-    const { status, checkIn, checkOut, leaveReason, schoolDate, checkInClock, checkOutClock } = req.body;
+    const { status, checkIn, checkOut, leaveReason, schoolDate, checkInClock, checkOutClock, late } = req.body;
     const timeZone = await schoolZone();
     const schoolCheckIn = wallStamp(schoolDate, checkInClock || "00:00", timeZone);
     const schoolCheckOut = wallStamp(schoolDate, checkOutClock, timeZone);
+    const checkInAt = schoolCheckIn || (checkIn ? new Date(Number(checkIn) || checkIn) : undefined);
     const attendance = await TeacherAttendance.findByIdAndUpdate(
       req.params.id,
       {
         status,
-        checkIn: schoolCheckIn || (checkIn ? new Date(Number(checkIn) || checkIn) : undefined),
-        checkOut: schoolCheckOut || (checkOut ? new Date(Number(checkOut) || checkOut) : undefined),
+        checkIn: checkInAt,
+        checkOut: status === "PRESENT" ? schoolCheckOut || (checkOut ? new Date(Number(checkOut) || checkOut) : null) : null,
         leaveReason,
+        late: await teacherLate(status, checkInAt, readLate(late), timeZone),
       },
       { new: true }
     );

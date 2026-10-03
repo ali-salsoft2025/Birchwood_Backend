@@ -68,8 +68,9 @@ exports.createChat = async (req, res) => {
     if (chat) {
       if (parentId && String(chat.parent) !== String(parentId)) {
         chat.parent = parentId;
-        await chat.save();
       }
+      chat.hiddenFor = (chat.hiddenFor || []).filter((id) => String(id) !== callerId);
+      await chat.save();
       return res.json(ApiResponse(chat, "Chat Between these Two users already exists", true));
     }
 
@@ -111,7 +112,10 @@ exports.getMyChats = async (req, res) => {
         if(type == "parent"){
 
           finalAggregate.push({
-            $match: {parent: new mongoose.Types.ObjectId(req.user._id)}
+            $match: {
+              parent: new mongoose.Types.ObjectId(req.user._id),
+              hiddenFor: { $nin: [new mongoose.Types.ObjectId(req.user._id)] },
+            },
           },
           {
             $lookup: {
@@ -159,7 +163,10 @@ exports.getMyChats = async (req, res) => {
         }else{
 
           finalAggregate.push({
-            $match: {teacher: new mongoose.Types.ObjectId(req.user._id)}
+            $match: {
+              teacher: new mongoose.Types.ObjectId(req.user._id),
+              hiddenFor: { $nin: [new mongoose.Types.ObjectId(req.user._id)] },
+            },
           },
           {
             $lookup: {
@@ -241,6 +248,20 @@ exports.getMyChats = async (req, res) => {
       finalAggregate.length > 0 ? Chat.aggregate(finalAggregate) : Chat.aggregate([]);
 
       const chats = await Chat.aggregatePaginate(myAggregate,{page:"1",limit:"100"});
+      const viewerId = String(req.user._id);
+      (chats.docs || []).forEach((chatDoc) => {
+        const latest = chatDoc.latestMessage;
+        if (!latest || typeof latest !== "object") return;
+        const hiddenForMe = (latest.deletedFor || []).some((id) => String(id) === viewerId);
+        if (latest.deletedForEveryone) {
+          latest.content = "";
+          latest.attachment = undefined;
+        } else if (hiddenForMe) {
+          latest.content = "";
+          latest.hiddenForMe = true;
+        }
+        delete latest.deletedFor;
+      });
 
       res.json(ApiResponse(chats));
 
@@ -248,3 +269,30 @@ exports.getMyChats = async (req, res) => {
       return res.status(500).json(ApiResponse({}, error.message,false));
     }
   };
+
+exports.deleteChat = async (req, res) => {
+  const { chatId } = req.body || {};
+  try {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      return res.json(ApiResponse({}, "Chat not Found", false));
+    }
+    const userId = String(req.user?._id || "");
+    const isMember = String(chat.teacher) === userId || String(chat.parent) === userId;
+    if (!isMember) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+
+    chat.hiddenFor = chat.hiddenFor || [];
+    if (!chat.hiddenFor.some((id) => String(id) === userId)) {
+      chat.hiddenFor.push(req.user._id);
+    }
+    chat.clearedFor = (chat.clearedFor || []).filter((row) => String(row?.user) !== userId);
+    chat.clearedFor.push({ user: req.user._id, at: new Date() });
+    await chat.save();
+
+    return res.json(ApiResponse({ chatId: chat._id }, "Chat deleted for you", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, error.message, false));
+  }
+};

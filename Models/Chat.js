@@ -37,6 +37,21 @@ const chatSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "message",
     },
+    hiddenFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+      },
+    ],
+    clearedFor: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+        },
+        at: {
+          type: Date,
+        },
+      },
+    ],
     status:{
         type:String,
         enum:["ACTIVE","INACTIVE"],

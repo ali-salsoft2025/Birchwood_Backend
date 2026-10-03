@@ -53,10 +53,18 @@ exports.markCheckIn = async (req, res) => {
     try {
         const { rules, timeZone } = await loadTeacherRules();
         const now = new Date();
-        const punch = punchState(now, rules, timeZone);
+        const { resolveTeacherDay } = require("../../Helpers/teacherWorkDay");
+        const day = await resolveTeacherDay(now, rules, timeZone);
+        const punch = day.punch;
+        if (day.off) {
+            const reason = day.reason === "holiday"
+                ? "Teachers are off for this holiday"
+                : "Teachers are off on the weekend";
+            return res.status(400).json(ApiResponse({}, reason, false));
+        }
         if (!punch.checkInOpen) {
             return res.status(400).json(
-                ApiResponse({}, `Check-in opens at ${rules.checkInOpensLabel}`, false)
+                ApiResponse({}, `Check-in opens at ${day.described.checkInOpensLabel}`, false)
             );
         }
         const { start, end } = schoolDayBounds(now, timeZone);
@@ -74,7 +82,20 @@ exports.markCheckIn = async (req, res) => {
             if (existingAttendance.leaveStatus === "PENDING" || existingAttendance.status === "LEAVE") {
                 return res.status(400).json(ApiResponse({}, "Leave is already applied for today", false));
             }
-            return res.status(400).json(ApiResponse({}, "Check-In Already Marked", false));
+            if (existingAttendance.status !== "ABSENT") {
+                return res.status(400).json(ApiResponse({}, "Check-In Already Marked", false));
+            }
+            existingAttendance.status = "PRESENT";
+            existingAttendance.checkIn = now;
+            existingAttendance.checkOut = null;
+            existingAttendance.late = punch.late;
+            await existingAttendance.save();
+            teacher.checkIn = true;
+            await teacher.save();
+            const lateMessage = punch.late
+                ? `Checked in late. On-time check-in ended at ${day.described.onTimeUntilLabel}`
+                : "Check-In Marked Successfully";
+            return res.status(200).json(ApiResponse({ newAttendance: existingAttendance, late: punch.late, rules }, lateMessage, true));
         }
 
         // Create new attendance record. The school clock decides late vs on time.
@@ -92,7 +113,7 @@ exports.markCheckIn = async (req, res) => {
         await teacher.save();
 
         const message = punch.late
-            ? `Checked in late. On-time check-in ended at ${rules.onTimeUntilLabel}`
+            ? `Checked in late. On-time check-in ended at ${day.described.onTimeUntilLabel}`
             : "Check-In Marked Successfully";
         return res.status(200).json(ApiResponse({ newAttendance, late: punch.late, rules }, message, true));
 
@@ -111,6 +132,14 @@ exports.markCheckOut = async (req, res) => {
   try {
     const { rules, timeZone } = await loadTeacherRules();
     const now = new Date();
+    const { resolveTeacherDay } = require("../../Helpers/teacherWorkDay");
+    const day = await resolveTeacherDay(now, rules, timeZone);
+    if (day.off) {
+      const reason = day.reason === "holiday"
+        ? "Teachers are off for this holiday"
+        : "Teachers are off on the weekend";
+      return res.status(400).json(ApiResponse({}, reason, false));
+    }
     const { start, end } = schoolDayBounds(now, timeZone);
 
     // Find existing attendance for the school day
@@ -128,9 +157,9 @@ exports.markCheckOut = async (req, res) => {
       return res.status(400).json(ApiResponse({}, "CheckOut Already Marked", false));
     }
 
-    const punch = punchState(now, rules, timeZone);
+    const punch = day.punch;
     if (!punch.checkoutOpen) {
-      return res.status(400).json(ApiResponse({}, `Check-out opens at ${rules.checkOutLabel}`, false));
+      return res.status(400).json(ApiResponse({}, `Check-out opens at ${day.described.checkOutLabel}`, false));
     }
 
     // Update attendance record with the school clock, not the phone clock
@@ -263,7 +292,9 @@ exports.getSchedule = async (req, res) => {
   try {
     const { rules, timeZone } = await loadTeacherRules();
     const now = new Date();
-    const punch = punchState(now, rules, timeZone);
+    const { resolveTeacherDay } = require("../../Helpers/teacherWorkDay");
+    const day = await resolveTeacherDay(now, rules, timeZone);
+    const punch = day.punch;
     const year = calendarYearBounds(now, timeZone);
     const usedRows = await Attendance.aggregate([
       {
@@ -284,17 +315,24 @@ exports.getSchedule = async (req, res) => {
       const allowed = rules.leaveQuota[key];
       quota[key] = { allowed, used: used[key] || 0, remaining: Math.max(0, allowed - (used[key] || 0)) };
     });
-    const { start, end } = schoolDayBounds(now, timeZone);
-    const todayAttendance = await Attendance.findOne({
-      teacher: req.user._id,
-      checkIn: { $gte: start, $lte: end },
-    });
+    const { ensureTeacherAbsent } = require("../../Helpers/autoAbsent");
+    const todayAttendance = await ensureTeacherAbsent(req.user._id, day, timeZone, now);
     return res.json(
       ApiResponse(
         {
-          rules,
+          rules: { ...day.described, timeZone },
           timeZone,
-          lateIfNow: punch.checkInOpen && punch.late,
+          dayOff: day.off,
+          dayOffReason: day.reason,
+          dayOffName: day.off ? day.name : "",
+          specialDay: day.special
+            ? {
+                name: day.name,
+                checkInLabel: day.described.checkInLabel,
+                checkOutLabel: day.described.checkOutLabel,
+              }
+            : null,
+          lateIfNow: !day.off && punch.checkInOpen && punch.late,
           checkInOpen: punch.checkInOpen,
           checkoutOpen: punch.checkoutOpen,
           quota,

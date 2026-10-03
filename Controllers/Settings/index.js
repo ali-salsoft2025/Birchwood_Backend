@@ -1,4 +1,5 @@
 const SchoolSettings = require("../../Models/SchoolSettings");
+const TeacherDutyDay = require("../../Models/TeacherDutyDay");
 const TeacherAttendance = require("../../Models/TeacherAttendance");
 const Teacher = require("../../Models/Teacher");
 const { ApiResponse } = require("../../Helpers/index");
@@ -7,7 +8,8 @@ const {
   clockToMinutes,
   normalizeTeacherRules,
 } = require("../../Helpers/teacherDay");
-const { DEFAULT_SCHOOL_TIME_ZONE, isValidTimeZone } = require("../../Helpers/schoolDay");
+const { DEFAULT_SCHOOL_TIME_ZONE, isValidTimeZone, formatClock } = require("../../Helpers/schoolDay");
+const { minutesToClockInput } = require("../../Helpers/teacherDay");
 
 const TOGGLEABLE = [
   "fees",
@@ -19,6 +21,47 @@ const TOGGLEABLE = [
   "register",
   "notifications",
 ];
+
+function cleanAppText(value, max) {
+  return String(value || "").replace(/\r\n/g, "\n").trim().slice(0, max);
+}
+
+function appInfoPayload(doc) {
+  const info = doc?.appInfo || {};
+  return {
+    teacherVersion: info.teacherVersion || "",
+    parentVersion: info.parentVersion || "",
+    privacyPolicy: info.privacyPolicy || "",
+    termsOfUse: info.termsOfUse || "",
+  };
+}
+
+exports.getAppInfo = async (req, res) => {
+  try {
+    const doc = await SchoolSettings.getSingleton();
+    return res.json(ApiResponse({ appInfo: appInfoPayload(doc) }, "", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.updateAppInfo = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const doc = await SchoolSettings.getSingleton();
+    doc.appInfo = {
+      teacherVersion: cleanAppText(body.teacherVersion, 40),
+      parentVersion: cleanAppText(body.parentVersion, 40),
+      privacyPolicy: cleanAppText(body.privacyPolicy, 20000),
+      termsOfUse: cleanAppText(body.termsOfUse, 20000),
+    };
+    doc.markModified("appInfo");
+    await doc.save();
+    return res.json(ApiResponse({ appInfo: appInfoPayload(doc) }, "App information saved", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
 
 exports.getModules = async (req, res) => {
   try {
@@ -107,6 +150,72 @@ exports.updateTeacherRules = async (req, res) => {
         true
       )
     );
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+function dutyPayload(day) {
+  return {
+    ...day,
+    checkInClock: minutesToClockInput(day.checkInMinutes),
+    checkOutClock: minutesToClockInput(day.checkOutMinutes),
+    checkInLabel: formatClock(day.checkInMinutes),
+    checkOutLabel: formatClock(day.checkOutMinutes),
+  };
+}
+
+exports.listTeacherDutyDays = async (req, res) => {
+  try {
+    const days = await TeacherDutyDay.find().sort({ startKey: 1 }).lean();
+    return res.json(ApiResponse({ days: days.map(dutyPayload) }, "", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.saveTeacherDutyDay = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const startKey = String(body.startKey || "").trim();
+    const endKey = String(body.endKey || startKey).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startKey) || !/^\d{4}-\d{2}-\d{2}$/.test(endKey) || endKey < startKey) {
+      return res.status(400).json(ApiResponse({}, "Choose a valid date", false));
+    }
+    const checkInMinutes = clockToMinutes(body.checkInClock);
+    const checkOutMinutes = clockToMinutes(body.checkOutClock);
+    if (checkInMinutes == null || checkOutMinutes == null) {
+      return res.status(400).json(ApiResponse({}, "Enter check-in and check-out as HH:MM", false));
+    }
+    if (checkOutMinutes <= checkInMinutes) {
+      return res.status(400).json(ApiResponse({}, "Check-out must be after check-in", false));
+    }
+    const payload = {
+      name: String(body.name || "Special day").trim() || "Special day",
+      startKey,
+      endKey,
+      checkInMinutes,
+      checkOutMinutes,
+    };
+    const day = body.id
+      ? await TeacherDutyDay.findByIdAndUpdate(body.id, payload, { new: true }).lean()
+      : (await TeacherDutyDay.create(payload)).toObject();
+    if (!day) {
+      return res.status(404).json(ApiResponse({}, "Special day not found", false));
+    }
+    return res.json(ApiResponse({ day: dutyPayload(day) }, "Special day saved", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.deleteTeacherDutyDay = async (req, res) => {
+  try {
+    const day = await TeacherDutyDay.findByIdAndDelete(req.params.id);
+    if (!day) {
+      return res.status(404).json(ApiResponse({}, "Special day not found", false));
+    }
+    return res.json(ApiResponse({}, "Special day removed", true));
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
   }
