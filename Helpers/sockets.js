@@ -1,4 +1,3 @@
-const Children = require("../Models/Children");
 const { sendNotificationToUser } = require("./notification");
 
 const toId = (value) => (value ? String(value) : null);
@@ -36,82 +35,21 @@ exports.childLeaveNotification = async (recieverId, childData) => {
   );
 };
 
-exports.sendCommentNotification = async ({ post, authorType }) => {
+async function notifyPostCreator(post, actorId, title, content) {
+  const authorId = toId(post.author?._id || post.author);
+  if (!authorId || authorId === toId(actorId)) return;
+  await sendNotificationToUser(authorId, title, content);
+}
+
+exports.sendCommentNotification = async ({ post, comment }) => {
   if (!post) return;
-
-  const populated = await post.populate([
-    { path: "children" },
-    { path: "author", select: "_id" },
-  ]);
-  const teacherId = toId(populated.author?._id || populated.author);
-  const parentIds = new Set();
-
-  if (populated.type === "CHILD") {
-    (populated.children || []).forEach((child) => {
-      if (child && child.parent) parentIds.add(toId(child.parent));
-    });
-  } else if (populated.type === "CLASS") {
-    const childrenInClass = await Children.find({ classroom: populated.classroom });
-    childrenInClass.forEach((child) => {
-      if (child.parent) parentIds.add(toId(child.parent));
-    });
-  }
-
-  if (authorType === "parent" && teacherId) {
-    await sendNotificationToUser(
-      teacherId,
-      "New Comment",
-      `A parent commented on post ${populated._id}`
-    );
-  } else if (authorType === "teacher") {
-    await Promise.all(
-      [...parentIds].filter(Boolean).map((parentId) =>
-        sendNotificationToUser(
-          parentId,
-          "New Comment",
-          `The teacher commented on post ${populated._id}`
-        )
-      )
-    );
-  }
+  const actorId = toId(comment?.author?._id || comment?.author);
+  await notifyPostCreator(post, actorId, "New comment", "Someone commented on your post");
 };
 
-exports.sendLikeAndLoveNotification = async ({
-  post,
-  authorType,
-  title,
-  msg,
-}) => {
-  if (!post) return;
-
-  const populated = await post.populate([
-    { path: "children" },
-    { path: "author", select: "_id" },
-  ]);
-  const teacherId = toId(populated.author?._id || populated.author);
-  const parentIds = new Set();
-  const content = `${msg}: ${populated._id}`;
-
-  if (populated.type === "CHILD") {
-    (populated.children || []).forEach((child) => {
-      if (child && child.parent) parentIds.add(toId(child.parent));
-    });
-  } else if (populated.type === "CLASS") {
-    const childrenInClass = await Children.find({ classroom: populated.classroom });
-    childrenInClass.forEach((child) => {
-      if (child.parent) parentIds.add(toId(child.parent));
-    });
-  }
-
-  if (authorType === "parent" && teacherId) {
-    await sendNotificationToUser(teacherId, title, content);
-  } else if (authorType === "teacher") {
-    await Promise.all(
-      [...parentIds].filter(Boolean).map((parentId) =>
-        sendNotificationToUser(parentId, title, content)
-      )
-    );
-  }
+exports.sendLikeAndLoveNotification = async ({ post, userId, title }) => {
+  if (!post || title === "Post UnLiked") return;
+  await notifyPostCreator(post, userId, "New like", "Someone liked your post");
 };
 
 exports.sendAdminActivityUpdatesToTeachers = async () => {
