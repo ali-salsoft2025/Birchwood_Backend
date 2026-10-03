@@ -195,31 +195,60 @@ exports.getClassroomById = async (req, res) => {
   }
 };
 
+function escapeTeacherSearch(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 exports.searchTeachers = async (req, res) => {
   try {
-    const { keyword } = req.query;
+    const keyword = String(req.query.keyword || "").trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const paged = req.query.page !== undefined || req.query.limit !== undefined;
+    const filter = { status: "ACTIVE" };
 
-    //if not keyword return 10 students
-    if (!keyword) {
-      const teachers = await Teacher.find({status:"ACTIVE"}).limit(10);
+    if (keyword) {
+      const pattern = escapeTeacherSearch(keyword);
+      filter.$or = [
+        { firstName: { $regex: pattern, $options: "i" } },
+        { lastName: { $regex: pattern, $options: "i" } },
+        { teacherId: { $regex: pattern, $options: "i" } },
+        { email: { $regex: pattern, $options: "i" } },
+      ];
+    }
+
+    if (!paged) {
+      const query = Teacher.find(filter)
+        .select("firstName lastName teacherId email")
+        .sort({ firstName: 1, lastName: 1 });
+      if (!keyword) query.limit(10);
+      const teachers = await query.lean();
       return res.json(ApiResponse({ teachers }, "", true));
     }
 
-    const teachers = await Teacher.find({
-        $and: [
-    { status: "ACTIVE" },
-    {
-      $or: [
-       { firstName: { $regex: keyword, $options: "i" } },
-        { lastName: { $regex: keyword, $options: "i" } },
-         { teacherId: { $regex: keyword, $options: "i" } },
+    const [teachers, totalDocs] = await Promise.all([
+      Teacher.find(filter)
+        .select("firstName lastName teacherId email")
+        .sort({ firstName: 1, lastName: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Teacher.countDocuments(filter),
+    ]);
 
-      ],
-    },
-  ]
-    });
-
-    return res.json(ApiResponse({ teachers }, "", true));
+    return res.json(
+      ApiResponse(
+        {
+          teachers,
+          page,
+          limit,
+          totalDocs,
+          totalPages: Math.max(1, Math.ceil(totalDocs / limit)),
+        },
+        "",
+        true
+      )
+    );
   } catch (error) {
     return res.json(ApiResponse({}, errorHandler(error) ? errorHandler(error) : error.message, false));
   }
