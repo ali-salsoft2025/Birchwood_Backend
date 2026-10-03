@@ -106,7 +106,7 @@ exports.getAllMyChildren = async (req, res) => {
     const schoolClosed = await studentsClosedForDuty(now, DEFAULT_SCHOOL_TIME_ZONE);
     const withToday = await attachTodayAttendance(parent.childrens || [], now);
     const children = withToday.map((plain) => {
-      const view = childDayView(plain.todayAttendance, now, { schoolClosed });
+      const view = childDayView(plain.todayAttendance, now, { schoolClosed, openDuty: schoolClosed });
       const checkedIn = view.todayStatus === "PRESENT" || view.todayStatus === "LATE";
       return { ...plain, ...view, checkIn: checkedIn };
     });

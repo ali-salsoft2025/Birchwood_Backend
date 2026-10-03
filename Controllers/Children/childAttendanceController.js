@@ -185,13 +185,14 @@ exports.markLeave = async (req, res) => {
   try {
     let { checkIn, leaveReason, children, markedBy } = req.body;
     const when = new Date(checkIn);
-    if (Number.isNaN(when.getTime()) || !isSchoolWeekday(when)) {
+    if (Number.isNaN(when.getTime())) {
       return res.status(400).json(ApiResponse({}, "Leave is only for school days", false));
     }
-    const { studentsClosedForDuty } = require("../../Helpers/teacherWorkDay");
+    const { dutyForKey, dateKey } = require("../../Helpers/teacherWorkDay");
     const { DEFAULT_SCHOOL_TIME_ZONE } = require("../../Helpers/schoolDay");
-    if (await studentsClosedForDuty(when, DEFAULT_SCHOOL_TIME_ZONE)) {
-      return res.status(400).json(ApiResponse({}, "School is closed for students that day", false));
+    const openDuty = Boolean(await dutyForKey(dateKey(when, DEFAULT_SCHOOL_TIME_ZONE)));
+    if (!isSchoolWeekday(when) && !openDuty) {
+      return res.status(400).json(ApiResponse({}, "Leave is only for school days", false));
     }
 
     // Ensure checkIn is treated as UTC

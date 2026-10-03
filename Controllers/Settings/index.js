@@ -193,6 +193,27 @@ function dutyPayload(day) {
   };
 }
 
+exports.listOpenDays = async (req, res) => {
+  try {
+    const days = await TeacherDutyDay.find().sort({ startKey: 1 }).lean();
+    return res.json(
+      ApiResponse(
+        {
+          days: days.map((day) => ({
+            name: day.name || "Special day",
+            startKey: day.startKey,
+            endKey: day.endKey || day.startKey,
+          })),
+        },
+        "",
+        true
+      )
+    );
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
 exports.listTeacherDutyDays = async (req, res) => {
   try {
     const days = await TeacherDutyDay.find().sort({ startKey: 1 }).lean();
