@@ -87,6 +87,8 @@ app.use(
       if (/\.(mp4|mov|m4v|webm|avi)$/i.test(filePath)) {
         res.setHeader("Accept-Ranges", "bytes");
         res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      } else if (/\.(jpe?g|png|webp|gif)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=2592000");
       }
     },
   })
@@ -100,6 +102,8 @@ app.use(
       if (/\.(mp4|mov|m4v|webm|avi)$/i.test(filePath)) {
         res.setHeader("Accept-Ranges", "bytes");
         res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      } else if (/\.(jpe?g|png|webp|gif)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=2592000");
       }
     },
   })
