@@ -49,16 +49,13 @@ const VIDEO_TYPES = {
   ".avi": "video/x-msvideo",
 };
 
-/** Largest byte range sent in one response. Players ask for the next packet. */
-const VIDEO_PACKET = 1024 * 1024;
-
 function videoType(name) {
   return VIDEO_TYPES[path.extname(String(name || "")).toLowerCase()] || "";
 }
 
 /**
- * Send a video as a short byte range. The file stays on disk; only one packet
- * is read into the response at a time.
+ * Stream a video from disk. Range requests are honored in full so the player
+ * can read the picture, while the file itself is never loaded into memory.
  */
 function streamUploadedVideo(req, res, next) {
   if (req.method !== "GET" && req.method !== "HEAD") return next();
@@ -80,7 +77,7 @@ function streamUploadedVideo(req, res, next) {
   const common = {
     "Accept-Ranges": "bytes",
     "Content-Type": type,
-    "Cache-Control": "public, max-age=86400",
+    "Cache-Control": "public, max-age=604800",
   };
 
   const sendStream = (start, end, status) => {
@@ -128,7 +125,7 @@ function streamUploadedVideo(req, res, next) {
     res.writeHead(416, { "Content-Range": `bytes */${size}` });
     return res.end();
   }
-  end = Math.min(end, size - 1, start + VIDEO_PACKET - 1);
+  end = Math.min(end, size - 1);
   return sendStream(start, end, 206);
 }
 
