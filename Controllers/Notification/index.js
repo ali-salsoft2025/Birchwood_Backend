@@ -358,6 +358,68 @@ exports.deleteNotification = async (req, res) => {
   }
 };
 
+exports.bulkUserNotifications = async (req, res) => {
+  try {
+    const action = String(req.body.action || "").toLowerCase();
+    const ids = [
+      ...new Set(
+        (Array.isArray(req.body.ids) ? req.body.ids : [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      ),
+    ];
+
+    if (!["read", "unread", "delete"].includes(action)) {
+      return res.json(ApiResponse({}, "Choose read, unread, or delete", false));
+    }
+    if (!ids.length) {
+      return res.json(ApiResponse({}, "Select at least one notification", false));
+    }
+
+    const owned = await Notification.find({
+      _id: { $in: ids },
+      assignee: req.user._id,
+      isAdmin: false,
+    }).select("_id broadcastId");
+
+    if (!owned.length) {
+      return res.json(ApiResponse({}, "Those notifications are no longer available", false));
+    }
+
+    const ownedIds = owned.map((item) => item._id);
+    const idStrings = ownedIds.map((id) => String(id));
+    const userId = String(req.user._id);
+
+    if (action === "delete") {
+      await Notification.deleteMany({ _id: { $in: ownedIds } });
+      owned.forEach((item) => {
+        emitUserNotificationDeleted(userId, {
+          id: String(item._id),
+          broadcastId: item.broadcastId ? String(item.broadcastId) : undefined,
+        });
+      });
+      return res.json(
+        ApiResponse({ ids: idStrings, action }, "Notifications deleted", true)
+      );
+    }
+
+    const isRead = action === "read";
+    await Notification.updateMany({ _id: { $in: ownedIds } }, { $set: { isRead } });
+    idStrings.forEach((id) => {
+      markUserNotificationRead(userId, id, isRead);
+    });
+    return res.json(
+      ApiResponse(
+        { ids: idStrings, action, isRead },
+        isRead ? "Marked as read" : "Marked as unread",
+        true
+      )
+    );
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
 exports.deleteUserNotification = async (req, res) => {
   try {
     const notification = await Notification.findById(req.params.id);

@@ -10,6 +10,7 @@ const {
   markAllAsRead,
   deleteNotification,
   deleteUserNotification,
+  bulkUserNotifications,
   getUserNotifications,
   getUnreadUserNotifications,
 } = require("../../Controllers/Notification");
@@ -30,5 +31,6 @@ router.post("/markAllAsRead", adminRoute, markAllAsRead);
 router.post("/deleteNotification/:id", adminRoute, deleteNotification);
 router.get("/deleteNotification/:id", adminRoute, deleteNotification);
 router.post("/deleteUserNotification/:id", authenticatedRoute, deleteUserNotification);
+router.post("/bulkUserNotifications", authenticatedRoute, bulkUserNotifications);
 
 module.exports = router;
