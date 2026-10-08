@@ -7,10 +7,19 @@ const { ApiResponse } = require("../../Helpers/index");
 const { emitChatMessage } = require("../../Helpers/socketEmitter");
 
 const CHUNK_SIZE = 48 * 1024;
-const IMAGE_MAX = 800 * 1024;
+// Chunked chat uploads — photos can be larger than the old single-request 800 KB cap.
+const IMAGE_MAX = 10 * 1024 * 1024;
 const DOCUMENT_MAX = 2 * 1024 * 1024;
+const SESSION_MS = 10 * 60 * 1000;
 const UPLOAD_DIR = path.join(__dirname, "..", "..", "Uploads");
 const sessions = new Map();
+
+function humanLimit(bytes) {
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round(bytes / (1024 * 1024))} MB`;
+  }
+  return `${Math.round(bytes / 1024)} KB`;
+}
 
 const KINDS = {
   ".jpg": { mime: "image/jpeg", max: IMAGE_MAX },
@@ -97,8 +106,9 @@ exports.startAttachment = async (req, res) => {
       return res.status(400).json(ApiResponse({}, "Attach a photo or a document", false));
     }
     if (!Number.isFinite(bytes) || bytes < 1 || bytes > described.max) {
-      const limit = described.max === IMAGE_MAX ? "800 KB" : "2 MB";
-      return res.status(400).json(ApiResponse({}, `Keep this file under ${limit}`, false));
+      return res
+        .status(400)
+        .json(ApiResponse({}, `Keep this file under ${humanLimit(described.max)}`, false));
     }
     const chat = await Chat.findById(chatId).select("teacher parent");
     if (!chat) {
@@ -113,7 +123,7 @@ exports.startAttachment = async (req, res) => {
     const full = path.join(UPLOAD_DIR, stored);
     const stream = fs.createWriteStream(full, { flags: "a" });
     const uploadId = crypto.randomBytes(12).toString("hex");
-    const timer = setTimeout(() => dropSession(uploadId, true), 2 * 60 * 1000);
+    const timer = setTimeout(() => dropSession(uploadId, true), SESSION_MS);
     sessions.set(uploadId, {
       userId: String(req.user._id),
       chatId: String(chatId),
@@ -160,7 +170,7 @@ exports.chunkAttachment = async (req, res) => {
     session.received += chunk.length;
     session.next += 1;
     clearTimeout(session.timer);
-    session.timer = setTimeout(() => dropSession(uploadId, true), 2 * 60 * 1000);
+    session.timer = setTimeout(() => dropSession(uploadId, true), SESSION_MS);
     return res.json(ApiResponse({ received: session.received, total: session.size }, "Chunk saved", true));
   } catch (error) {
     dropSession(uploadId, true);
