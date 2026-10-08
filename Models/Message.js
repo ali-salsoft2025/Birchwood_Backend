@@ -37,6 +37,8 @@ const messageSchema = new Schema(
       file: { type: String, default: "" },
       duration: { type: Number, default: 0 },
       waveform: { type: [Number], default: [] },
+      // Cleared from Uploads after retention or when both sides deleted the message.
+      expired: { type: Boolean, default: false },
     },
   },
   { timestamps: true }

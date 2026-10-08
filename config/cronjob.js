@@ -196,3 +196,19 @@ cron.schedule('15 2 * * *', async () => {
     console.error('Error purging old notifications:', error);
   }
 }, { timezone: SCHOOL_TZ });
+
+// Chat images/docs left only on the server are removed after ~30 days.
+// Devices that already downloaded a copy keep it locally until the user deletes it.
+const { purgeExpiredChatAttachments } = require('../Helpers/chatAttachments');
+cron.schedule('30 2 * * *', async () => {
+  try {
+    const result = await purgeExpiredChatAttachments();
+    if (result.purged > 0) {
+      console.log(
+        `Purged ${result.purged} expired chat attachment(s) (retention ${result.days} days).`,
+      );
+    }
+  } catch (error) {
+    console.error('Error purging expired chat attachments:', error);
+  }
+}, { timezone: SCHOOL_TZ });
