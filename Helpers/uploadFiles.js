@@ -41,4 +41,95 @@ function unlinkUploadedFile(filename) {
   }
 }
 
-module.exports = { unlinkUploadedFile, resolveUploadPath, UPLOAD_DIR };
+const VIDEO_TYPES = {
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".avi": "video/x-msvideo",
+};
+
+/** Largest byte range sent in one response. Players ask for the next packet. */
+const VIDEO_PACKET = 1024 * 1024;
+
+function videoType(name) {
+  return VIDEO_TYPES[path.extname(String(name || "")).toLowerCase()] || "";
+}
+
+/**
+ * Send a video as a short byte range. The file stays on disk; only one packet
+ * is read into the response at a time.
+ */
+function streamUploadedVideo(req, res, next) {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  let name = "";
+  try {
+    name = path.basename(decodeURIComponent(req.path || ""));
+  } catch {
+    return next();
+  }
+  const type = videoType(name);
+  if (!type) return next();
+  const filePath = resolveUploadPath(name);
+  if (!filePath || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    return next();
+  }
+
+  const size = fs.statSync(filePath).size;
+  if (size < 1) return next();
+  const common = {
+    "Accept-Ranges": "bytes",
+    "Content-Type": type,
+    "Cache-Control": "public, max-age=86400",
+  };
+
+  const sendStream = (start, end, status) => {
+    const length = end - start + 1;
+    res.writeHead(status, {
+      ...common,
+      "Content-Length": length,
+      ...(status === 206 ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
+    });
+    if (req.method === "HEAD") return res.end();
+    const stream = fs.createReadStream(filePath, { start, end });
+    const close = () => stream.destroy();
+    res.on("close", close);
+    stream.on("error", () => {
+      res.removeListener("close", close);
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
+    stream.pipe(res);
+  };
+
+  const range = req.headers.range;
+  if (!range) return sendStream(0, size - 1, 200);
+
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(String(range).trim());
+  if (!match || (match[1] === "" && match[2] === "")) {
+    res.writeHead(416, { "Content-Range": `bytes */${size}` });
+    return res.end();
+  }
+
+  let start = 0;
+  let end = size - 1;
+  if (match[1] === "") {
+    const suffix = parseInt(match[2], 10);
+    if (!Number.isFinite(suffix)) {
+      res.writeHead(416, { "Content-Range": `bytes */${size}` });
+      return res.end();
+    }
+    start = Math.max(size - suffix, 0);
+  } else {
+    start = parseInt(match[1], 10);
+    end = match[2] ? parseInt(match[2], 10) : size - 1;
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= size || end < start) {
+    res.writeHead(416, { "Content-Range": `bytes */${size}` });
+    return res.end();
+  }
+  end = Math.min(end, size - 1, start + VIDEO_PACKET - 1);
+  return sendStream(start, end, 206);
+}
+
+module.exports = { unlinkUploadedFile, resolveUploadPath, streamUploadedVideo, UPLOAD_DIR };

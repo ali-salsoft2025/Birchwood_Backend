@@ -8,6 +8,7 @@ const fs = require("fs");
 const morgan = require("morgan");
 
 const { envFile } = require("./config/loadEnv");
+const { streamUploadedVideo } = require("./Helpers/uploadFiles");
 
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is required");
@@ -80,6 +81,8 @@ const limiter = rateLimit({
 });
 
 app.use("/api", limiter);
+app.use("/Uploads", streamUploadedVideo);
+app.use("/uploads", streamUploadedVideo);
 app.use(
   "/Uploads",
   express.static("./Uploads", {

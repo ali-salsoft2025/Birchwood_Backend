@@ -4,8 +4,17 @@ const router = express.Router()
 const { authenticatedRoute,adminRoute } = require("../../Middlewares/auth")
 const {uploadMultiple} = require("../../Middlewares/upload")
 const {addPostValidator,commentPostValidator} = require("../../Validator/postValidator")
+const {startPostVideo, chunkPostVideo, finishPostVideo} = require("../../Controllers/Post/videoUpload")
 
 
+router.post("/startVideo", authenticatedRoute, startPostVideo);
+router.post(
+  "/videoChunk",
+  authenticatedRoute,
+  express.raw({ type: "application/octet-stream", limit: "576kb" }),
+  chunkPostVideo
+);
+router.post("/finishVideo", authenticatedRoute, finishPostVideo);
 router.post("/addPost",authenticatedRoute,uploadMultiple,addPostValidator,addPost)
 router.get("/getAllPosts",authenticatedRoute,getAllPosts)
 router.get("/getAllClassPosts/:id",authenticatedRoute,getAllClassPosts)
