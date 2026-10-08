@@ -13,7 +13,7 @@
     "seed:auth": "node scripts/seed-auth.js",
     "seed:auth:live": "node scripts/seed-auth.js --live",
     "reset:admin": "node scripts/reset-admin.js",
-    "reset:admin:live": "node scripts/reset-admin.js --live",
+    "reset:admin:live": "node scripts/reset-admin.js --live --yes",
     "wipe:local": "node scripts/wipe-local-except-admin.js",
     "test:auth": "node scripts/test-parent-auth-flow.js"
   },
