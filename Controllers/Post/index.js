@@ -16,7 +16,25 @@ const {
 const { sendCommentNotification, sendLikeAndLoveNotification } = require("../../Helpers/sockets");
 const { assertPostModifyAccess, assertCanReadPost, canReadClassroom, postListMatch, assertCanAccessChild } = require("../../Helpers/accessControl");
 const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
+const { claimPostVideos, listPostVideoNames } = require("./videoUpload");
 const mongoose = require('mongoose');
+
+function attachStreamedVideos(req, already = []) {
+  let pending = [];
+  try {
+    pending = listPostVideoNames(req.body.streamedVideos);
+  } catch (error) {
+    return { error: error.message || "Video upload was incomplete" };
+  }
+  if (already.length + pending.length > 10) {
+    return { error: "You can add up to 10 videos" };
+  }
+  try {
+    return claimPostVideos(req.user._id, pending);
+  } catch (error) {
+    return { error: error.message || "Video upload was incomplete" };
+  }
+}
 
 exports.addPost = async (req, res) => {
   if (req.isAdmin) {
@@ -27,7 +45,12 @@ exports.addPost = async (req, res) => {
   const { image, video } = req.files || {};
 
   let imagesArr = image ? image.map((item) => item?.filename) : [];
-  let videosArr = video ? video.map((item) => item?.filename) : [];
+  const uploadedVideos = video ? video.map((item) => item?.filename) : [];
+  const streamed = attachStreamedVideos(req, uploadedVideos);
+  if (streamed.error) {
+    return res.status(400).json(ApiResponse({}, streamed.error, false));
+  }
+  let videosArr = [...uploadedVideos, ...streamed];
 
   console.log(req.files);
   try {
@@ -717,7 +740,12 @@ exports.updatePost = async (req, res) => {
     let oldVideos = req.body.oldVideos ? JSON.parse(req.body.oldVideos) : [];
 
     const newImages = req?.files?.image ? req.files.image.map(file => file.filename) : [];
-    const newVideos = req?.files?.video ? req.files.video.map(file => file.filename) : [];
+    const uploadedVideos = req?.files?.video ? req.files.video.map(file => file.filename) : [];
+    const streamed = attachStreamedVideos(req, uploadedVideos);
+    if (streamed.error) {
+      return res.status(400).json(ApiResponse({}, streamed.error, false));
+    }
+    const newVideos = [...uploadedVideos, ...streamed];
 
     // Remove old images from server
     oldImages.forEach(item => {
