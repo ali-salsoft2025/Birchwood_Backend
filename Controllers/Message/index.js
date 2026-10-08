@@ -1,12 +1,15 @@
 //Models
-const fs = require("fs");
-const path = require("path");
 const Chat = require("../../Models/Chat")
 const Message = require("../../Models/Message");
 
 //Helpers
 const { ApiResponse } = require("../../Helpers/index");
 const { emitChatMessage, emitChatMessageDeleted } = require("../../Helpers/socketEmitter");
+const {
+  purgeAttachmentIfOrphaned,
+  removeUploadFile,
+  clearAttachmentFields,
+} = require("../../Helpers/chatAttachments");
 
 const DELETE_FOR_EVERYONE_MS = 48 * 60 * 60 * 1000;
 
@@ -191,12 +194,12 @@ exports.deleteMessage = async (req, res) => {
       const storedFile = message.attachment?.file;
       message.deletedForEveryone = true;
       message.content = "";
-      message.attachment = { name: "", mime: "", size: 0, file: "" };
+      message.attachment = clearAttachmentFields(message.attachment);
+      message.attachment.name = "";
+      message.attachment.mime = "";
       await message.save();
       if (storedFile) {
-        fs.promises
-          .unlink(path.join(__dirname, "..", "..", "Uploads", path.basename(storedFile)))
-          .catch(() => {});
+        await removeUploadFile(storedFile);
       }
       const payload = {
         _id: message._id,
@@ -212,12 +215,15 @@ exports.deleteMessage = async (req, res) => {
     if (!already) {
       message.deletedFor = message.deletedFor || [];
       message.deletedFor.push(req.user._id);
-      await message.save();
     }
+    // If the other person already deleted it for themselves, drop the Uploads file too.
+    const purged = await purgeAttachmentIfOrphaned(message, chat);
+    await message.save();
     const payload = {
       _id: message._id,
       chat: message.chat,
       deletedForMe: true,
+      attachmentPurged: purged,
     };
     emitChatMessageDeleted(String(message.chat), payload, [req.user._id]);
     return res.json(ApiResponse({ message: payload }, "Message deleted for you", true));
