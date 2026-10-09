@@ -19,21 +19,29 @@ const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helper
 const { claimPostVideos, readyPostVideos, listPostVideoNames } = require("./videoUpload");
 const mongoose = require('mongoose');
 
-async function attachStreamedVideos(req, already = []) {
+async function attachStreamed(req, field, prefix, already = [], label = "videos") {
   let pending = [];
   try {
-    pending = listPostVideoNames(req.body.streamedVideos);
+    pending = listPostVideoNames(req.body[field]).filter((name) => name.startsWith(prefix));
   } catch (error) {
-    return { error: error.message || "Video upload was incomplete" };
+    return { error: error.message || "Upload was incomplete" };
   }
   if (already.length + pending.length > 10) {
-    return { error: "You can add up to 10 videos" };
+    return { error: `You can add up to 10 ${label}` };
   }
   try {
     return await readyPostVideos(req.user._id, pending);
   } catch (error) {
-    return { error: error.message || "Video upload was incomplete" };
+    return { error: error.message || "Upload was incomplete" };
   }
+}
+
+async function attachStreamedVideos(req, already = []) {
+  return attachStreamed(req, "streamedVideos", "post-video-", already, "videos");
+}
+
+async function attachStreamedImages(req, already = []) {
+  return attachStreamed(req, "streamedImages", "post-image-", already, "photos");
 }
 
 async function postForClient(req) {
@@ -69,6 +77,11 @@ exports.addPost = async (req, res) => {
   if (streamed.error) {
     return res.status(400).json(ApiResponse({}, streamed.error, false));
   }
+  const streamedImages = await attachStreamedImages(req, imagesArr);
+  if (streamedImages.error) {
+    return res.status(400).json(ApiResponse({}, streamedImages.error, false));
+  }
+  imagesArr = [...imagesArr, ...streamedImages];
   let videosArr = [...uploadedVideos, ...streamed];
 
   console.log(req.files);
@@ -93,6 +106,7 @@ exports.addPost = async (req, res) => {
     try {
       await newPost.save();
       if (streamed.length) await claimPostVideos(req.user._id, streamed);
+      if (streamedImages.length) await claimPostVideos(req.user._id, streamedImages);
     } catch (error) {
       if (error && error.code === 11000 && clientPostId) {
         const raced = await postForClient(req);
@@ -767,8 +781,13 @@ exports.updatePost = async (req, res) => {
       return;
     }
 
-    let oldImages = req.body.oldImages ? JSON.parse(req.body.oldImages) : [];
-    let oldVideos = req.body.oldVideos ? JSON.parse(req.body.oldVideos) : [];
+    const asList = (value) => {
+      if (Array.isArray(value)) return value;
+      if (typeof value === "string" && value.trim()) return JSON.parse(value);
+      return [];
+    };
+    let oldImages = asList(req.body.oldImages);
+    let oldVideos = asList(req.body.oldVideos);
 
     const newImages = req?.files?.image ? req.files.image.map(file => file.filename) : [];
     const uploadedVideos = req?.files?.video ? req.files.video.map(file => file.filename) : [];
@@ -776,7 +795,12 @@ exports.updatePost = async (req, res) => {
     if (streamed.error) {
       return res.status(400).json(ApiResponse({}, streamed.error, false));
     }
+    const streamedImages = await attachStreamedImages(req, newImages);
+    if (streamedImages.error) {
+      return res.status(400).json(ApiResponse({}, streamedImages.error, false));
+    }
     const newVideos = [...uploadedVideos, ...streamed];
+    newImages.push(...streamedImages);
 
     // Remove old images from server
     oldImages.forEach(item => {
@@ -799,12 +823,13 @@ exports.updatePost = async (req, res) => {
     if (req.body.activity && mongoose.Types.ObjectId.isValid(req.body.activity)) {
       post.activity = req.body.activity;
     }
-    post.children = req.body.children ? JSON.parse(req.body.children) : post.children || [];
+    post.children = req.body.children ? asList(req.body.children) : post.children || [];
     post.images = updatedImages;
     post.videos = updatedVideos;
 
     await post.save();
-    if (newVideos.length) await claimPostVideos(req.user._id, streamed);
+    if (streamed.length) await claimPostVideos(req.user._id, streamed);
+    if (streamedImages.length) await claimPostVideos(req.user._id, streamedImages);
 
     // Populate related fields
     post = await Post.findById(post._id)
