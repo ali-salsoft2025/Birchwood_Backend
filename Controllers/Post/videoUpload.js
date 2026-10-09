@@ -9,10 +9,17 @@ const VIDEO_MAX = 100 * 1024 * 1024;
 const SESSION_MS = 24 * 60 * 60 * 1000;
 
 const KINDS = {
-  ".mp4": "video/mp4",
-  ".m4v": "video/mp4",
-  ".mov": "video/quicktime",
-  ".webm": "video/webm",
+  ".mp4": { mime: "video/mp4", kind: "video" },
+  ".m4v": { mime: "video/mp4", kind: "video" },
+  ".mov": { mime: "video/quicktime", kind: "video" },
+  ".webm": { mime: "video/webm", kind: "video" },
+  ".jpg": { mime: "image/jpeg", kind: "image" },
+  ".jpeg": { mime: "image/jpeg", kind: "image" },
+  ".png": { mime: "image/png", kind: "image" },
+  ".webp": { mime: "image/webp", kind: "image" },
+  ".gif": { mime: "image/gif", kind: "image" },
+  ".heic": { mime: "image/heic", kind: "image" },
+  ".heif": { mime: "image/heif", kind: "image" },
 };
 
 const MIME_EXT = {
@@ -20,6 +27,18 @@ const MIME_EXT = {
   "video/quicktime": ".mov",
   "video/webm": ".webm",
   "video/x-m4v": ".m4v",
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
+};
+
+const MAX_BYTES = {
+  video: VIDEO_MAX,
+  image: 40 * 1024 * 1024,
 };
 
 const SESSION_DIR = path.join(UPLOAD_DIR, "post-sessions");
@@ -33,8 +52,13 @@ function describe(fileName, mime) {
   const named = path.extname(String(fileName || "")).toLowerCase();
   const fromMime = MIME_EXT[String(mime || "").toLowerCase()];
   const ext = KINDS[named] ? named : fromMime;
-  if (!ext || !KINDS[ext]) return null;
-  return { ext, mime: KINDS[ext] };
+  const described = ext ? KINDS[ext] : null;
+  if (!described) return null;
+  return { ext, mime: described.mime, kind: described.kind };
+}
+
+function streamName(name) {
+  return name.startsWith("post-video-") || name.startsWith("post-image-");
 }
 
 function safeToken(value) {
@@ -164,10 +188,11 @@ exports.startPostVideo = async (req, res) => {
   try {
     const described = describe(fileName, mime);
     if (!described) {
-      return res.status(400).json(ApiResponse({}, "Use an mp4, mov, or webm video", false));
+      return res.status(400).json(ApiResponse({}, "Use a photo or an mp4, mov, or webm video", false));
     }
-    if (!Number.isFinite(bytes) || bytes < 1 || bytes > VIDEO_MAX) {
-      return res.status(400).json(ApiResponse({}, `Keep videos under ${humanLimit(VIDEO_MAX)}`, false));
+    const limit = MAX_BYTES[described.kind] || VIDEO_MAX;
+    if (!Number.isFinite(bytes) || bytes < 1 || bytes > limit) {
+      return res.status(400).json(ApiResponse({}, `Keep ${described.kind === "image" ? "photos" : "videos"} under ${humanLimit(limit)}`, false));
     }
     if (clientKey) {
       const existing = await loadByClient(clientKey);
@@ -180,7 +205,7 @@ exports.startPostVideo = async (req, res) => {
       }
     }
     await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
-    const stored = `post-video-${Date.now()}-${crypto.randomBytes(6).toString("hex")}${described.ext}`;
+    const stored = `post-${described.kind}-${Date.now()}-${crypto.randomBytes(6).toString("hex")}${described.ext}`;
     const full = path.join(UPLOAD_DIR, stored);
     await fs.promises.writeFile(full, Buffer.alloc(0));
     const uploadId = crypto.randomBytes(12).toString("hex");
@@ -297,7 +322,7 @@ function listNames(raw) {
 exports.listPostVideoNames = listNames;
 
 async function sessionForFile(userId, name) {
-  if (!name.startsWith("post-video-")) return null;
+  if (!streamName(name)) return null;
   let entries = [];
   try {
     entries = await fs.promises.readdir(SESSION_DIR);
@@ -342,3 +367,21 @@ exports.claimPostVideos = async function claimPostVideos(userId, raw) {
 };
 
 exports.readyPostVideos = readyPostVideos;
+
+exports.cancelPostVideo = async (req, res) => {
+  const clientUploadId = safeToken((req.body || {}).clientUploadId);
+  const uploadId = safeToken((req.body || {}).uploadId);
+  try {
+    const session = uploadId ? await loadSession(uploadId) : await loadByClient(clientUploadId);
+    if (!session || session.userId !== String(req.user._id)) {
+      return res.json(ApiResponse({}, "Upload not found", true));
+    }
+    if (session.claimed) {
+      return res.json(ApiResponse({}, "Upload already posted", true));
+    }
+    await removeSession(session, true);
+    return res.json(ApiResponse({}, "Upload cancelled", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, error.message, false));
+  }
+};

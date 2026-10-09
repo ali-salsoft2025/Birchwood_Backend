@@ -4,7 +4,7 @@ const router = express.Router()
 const { authenticatedRoute,adminRoute } = require("../../Middlewares/auth")
 const {uploadMultiple} = require("../../Middlewares/upload")
 const {addPostValidator,commentPostValidator} = require("../../Validator/postValidator")
-const {startPostVideo, chunkPostVideo, finishPostVideo, statusPostVideo} = require("../../Controllers/Post/videoUpload")
+const {startPostVideo, chunkPostVideo, finishPostVideo, statusPostVideo, cancelPostVideo} = require("../../Controllers/Post/videoUpload")
 
 
 router.post("/startVideo", authenticatedRoute, startPostVideo);
@@ -15,6 +15,7 @@ router.post(
   chunkPostVideo
 );
 router.post("/finishVideo", authenticatedRoute, finishPostVideo);
+router.post("/cancelVideo", authenticatedRoute, cancelPostVideo);
 router.get("/videoStatus/:uploadId", authenticatedRoute, statusPostVideo);
 router.post("/addPost",authenticatedRoute,uploadMultiple,addPostValidator,addPost)
 router.get("/getAllPosts",authenticatedRoute,getAllPosts)
