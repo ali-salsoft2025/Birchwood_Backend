@@ -3,13 +3,16 @@ const { ApiResponse } = require("../Helpers")
 
 
 exports.addPostValidator = [
-    // Validate body parameters
-    body('content').not().isEmpty().withMessage('Post content is required'),
+    // Caption is optional — a photo or video alone is enough.
+    body('content').optional({nullable: true}).isString().withMessage('Post content must be text'),
     body('type').not().isEmpty().withMessage('Type is required'),
     body('activity').not().isEmpty().withMessage('Activity is required'),
   
     // Custom validation for query parameters
     (req, res, next) => {
+      if (typeof req.body.content !== 'string') {
+        req.body.content = req.body.content == null ? '' : String(req.body.content);
+      }
       const classroom = req.body.classroom;
       const child = req.body.children;
   
