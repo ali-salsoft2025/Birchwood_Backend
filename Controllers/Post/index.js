@@ -16,10 +16,10 @@ const {
 const { sendCommentNotification, sendLikeAndLoveNotification } = require("../../Helpers/sockets");
 const { assertPostModifyAccess, assertCanReadPost, canReadClassroom, postListMatch, assertCanAccessChild } = require("../../Helpers/accessControl");
 const { parseQueryList, parseObjectIdList, pushInMatch } = require("../../Helpers/queryList");
-const { claimPostVideos, listPostVideoNames } = require("./videoUpload");
+const { claimPostVideos, readyPostVideos, listPostVideoNames } = require("./videoUpload");
 const mongoose = require('mongoose');
 
-function attachStreamedVideos(req, already = []) {
+async function attachStreamedVideos(req, already = []) {
   let pending = [];
   try {
     pending = listPostVideoNames(req.body.streamedVideos);
@@ -30,10 +30,24 @@ function attachStreamedVideos(req, already = []) {
     return { error: "You can add up to 10 videos" };
   }
   try {
-    return claimPostVideos(req.user._id, pending);
+    return await readyPostVideos(req.user._id, pending);
   } catch (error) {
     return { error: error.message || "Video upload was incomplete" };
   }
+}
+
+async function postForClient(req) {
+  const clientPostId = String(req.body.clientPostId || "").trim();
+  if (!clientPostId) return null;
+  const existing = await Post.findOne({
+    author: req.user._id,
+    clientPostId,
+  }).populate([
+    { path: "author", select: "_id firstName lastName image" },
+    { path: "activity" },
+    { path: "classroom" },
+  ]);
+  return existing;
 }
 
 exports.addPost = async (req, res) => {
@@ -42,11 +56,16 @@ exports.addPost = async (req, res) => {
   }
 
   const { content, activity, children, classroom, type } = req.body;
+  const clientPostId = String(req.body.clientPostId || "").trim();
+  const already = await postForClient(req);
+  if (already) {
+    return res.status(200).json(ApiResponse({ newPost: already }, "Post Added Successfully", true));
+  }
   const { image, video } = req.files || {};
 
   let imagesArr = image ? image.map((item) => item?.filename) : [];
   const uploadedVideos = video ? video.map((item) => item?.filename) : [];
-  const streamed = attachStreamedVideos(req, uploadedVideos);
+  const streamed = await attachStreamedVideos(req, uploadedVideos);
   if (streamed.error) {
     return res.status(400).json(ApiResponse({}, streamed.error, false));
   }
@@ -68,9 +87,21 @@ exports.addPost = async (req, res) => {
       author: authorId,
       images: imagesArr,
       videos: videosArr,
+      ...(clientPostId ? { clientPostId } : {}),
     });
 
-    await newPost.save();
+    try {
+      await newPost.save();
+      if (streamed.length) await claimPostVideos(req.user._id, streamed);
+    } catch (error) {
+      if (error && error.code === 11000 && clientPostId) {
+        const raced = await postForClient(req);
+        if (raced) {
+          return res.status(200).json(ApiResponse({ newPost: raced }, "Post Added Successfully", true));
+        }
+      }
+      throw error;
+    }
     newPost = await newPost.populate([{ path: 'author', select: '_id firstName lastName image' }, { path: 'activity' }, { path: 'classroom' }])
 
     return res
@@ -741,7 +772,7 @@ exports.updatePost = async (req, res) => {
 
     const newImages = req?.files?.image ? req.files.image.map(file => file.filename) : [];
     const uploadedVideos = req?.files?.video ? req.files.video.map(file => file.filename) : [];
-    const streamed = attachStreamedVideos(req, uploadedVideos);
+    const streamed = await attachStreamedVideos(req, uploadedVideos);
     if (streamed.error) {
       return res.status(400).json(ApiResponse({}, streamed.error, false));
     }
@@ -773,6 +804,7 @@ exports.updatePost = async (req, res) => {
     post.videos = updatedVideos;
 
     await post.save();
+    if (newVideos.length) await claimPostVideos(req.user._id, streamed);
 
     // Populate related fields
     post = await Post.findById(post._id)

@@ -52,6 +52,10 @@ const postSchema = new mongoose.Schema(
         required: false,
       },
     ],
+    clientPostId: {
+      type: String,
+      required: false,
+    },
 
     likes: [
       {
@@ -67,6 +71,10 @@ const postSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+postSchema.index(
+  { author: 1, clientPostId: 1 },
+  { unique: true, partialFilterExpression: { clientPostId: { $type: "string" } } }
+);
 postSchema.plugin(mongoosePaginate);
 postSchema.plugin(aggregatePaginate);
 
