@@ -50,6 +50,12 @@ function escapeRegex(value) {
 
 exports.assignChild = async (req, res) => {
   try {
+    if (req.userRole && req.userRole !== "parent") {
+      return res
+        .status(403)
+        .json(ApiResponse({}, "Only parents can link children", false));
+    }
+
     const rollNumber = String(
       req.body.rollNumber || req.body.rollNo || "",
     ).trim();
@@ -74,16 +80,16 @@ exports.assignChild = async (req, res) => {
       birthday.isValid() &&
       calendarDay(birthday) === calendarDay(child.birthday);
 
-    if (!child || !birthdayMatches) {
+    // Generic mismatch for wrong details OR already linked to another parent
+    // (avoids confirming valid roll+DOB via distinct error messages).
+    if (
+      !child ||
+      !birthdayMatches ||
+      (child.parent && String(child.parent) !== String(parent._id))
+    ) {
       return res
         .status(400)
         .json(ApiResponse({}, "Child details do not match", false));
-    }
-
-    if (child.parent && String(child.parent) !== String(parent._id)) {
-      return res
-        .status(400)
-        .json(ApiResponse({}, "Child already has a parent assigned", false));
     }
 
     if (child.parent && String(child.parent) === String(parent._id)) {
@@ -152,32 +158,31 @@ exports.updateChildHealth = async (req, res) => {
 
 exports.removeChild = async (req, res) => {
   try {
-    const child = await Children.findById(req.body.child);
+    if (req.userRole && req.userRole !== "parent") {
+      return res
+        .status(403)
+        .json(ApiResponse({}, "Only parents can unlink children", false));
+    }
+
+    const childId = req.body.child || req.body.childId || req.params.id;
+    const child = await Children.findById(childId);
 
     if (!child) {
-      return res.status(200).json(ApiResponse({}, "Child not Found", true));
+      return res.status(404).json(ApiResponse({}, "Child not found", false));
     }
 
-    if (!child.parent) {
-      return res.status(400).json(ApiResponse({}, "Child does not have a parent assigned", true));
+    if (!child.parent || String(child.parent) !== String(req.user._id)) {
+      return res.status(403).json(ApiResponse({}, "This is not your child", false));
     }
 
-    const parent = await Parent.findById(req.user._id);
-    const isChildInParentArray = parent.childrens.includes(child._id);
-
-    if (!isChildInParentArray) {
-      return res.status(400).json(ApiResponse({}, "This is not your child", true));
-    }
-
-    parent.childrens = parent.childrens.filter(
-      (childId) => childId.toString() !== child._id.toString(),
-    );
+    const previousParentId = child.parent;
     child.parent = null;
-
-    await parent.save();
     await child.save();
+    await syncChildParentAssignment(child._id, null, previousParentId);
 
-    return res.status(200).json(ApiResponse({}, "Child removed successfully", true));
+    return res
+      .status(200)
+      .json(ApiResponse({}, "Child unlinked successfully", true));
   } catch (error) {
     return res.status(500).json(ApiResponse({}, error.message, false));
   }

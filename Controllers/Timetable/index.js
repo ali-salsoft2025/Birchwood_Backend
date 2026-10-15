@@ -24,6 +24,8 @@ async function canEditClassroom(req, classroomId) {
   return Boolean(room?.teacher && String(room.teacher) === String(req.user._id));
 }
 
+const { canReadClassroom } = require("../../Helpers/accessControl");
+
 function weekdayKey(date) {
   return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][moment(date, "YYYY-MM-DD").day()];
 }
@@ -134,6 +136,9 @@ exports.addTimetable = async (req, res) => {
     const { day } = req.query; // Assuming day filter is in the query parameters
 
   try {
+    if (!(await canReadClassroom(req, classroom))) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
     const slots = await Timetable.find({ classroom }).sort({ startTime: 1 }).lean();
     const filtered = day ? slots.filter((item) => item.day === day) : slots;
 
@@ -157,6 +162,9 @@ exports.addTimetable = async (req, res) => {
   const { classroom, day } = req.query;
 
   try {
+    if (!(await canReadClassroom(req, classroom))) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
     const timetable = await Timetable.find({ classroom, day: day.toUpperCase() });
 
     return res.json(ApiResponse({ timetable }, "", true));

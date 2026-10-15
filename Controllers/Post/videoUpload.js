@@ -205,7 +205,10 @@ exports.startPostVideo = async (req, res) => {
       }
     }
     await fs.promises.mkdir(UPLOAD_DIR, { recursive: true });
-    const stored = `post-${described.kind}-${Date.now()}-${crypto.randomBytes(6).toString("hex")}${described.ext}`;
+    const isThumb = /video-thumb/i.test(String(fileName || ""));
+    const stored = isThumb
+      ? `post-image-thumb-${Date.now()}-${crypto.randomBytes(6).toString("hex")}${described.ext}`
+      : `post-${described.kind}-${Date.now()}-${crypto.randomBytes(6).toString("hex")}${described.ext}`;
     const full = path.join(UPLOAD_DIR, stored);
     await fs.promises.writeFile(full, Buffer.alloc(0));
     const uploadId = crypto.randomBytes(12).toString("hex");

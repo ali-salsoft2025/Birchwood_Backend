@@ -48,7 +48,14 @@ exports.authenticatedRoute = async (req, res, next) => {
       return res.status(401).json(ApiResponse({}, "Unauthorized Access", false));
     }
 
-    req.user = parent || teacher;
+    const account = parent || teacher;
+    if (account.status && account.status !== "ACTIVE") {
+      return res
+        .status(401)
+        .json(ApiResponse({}, "Account is not active. Please sign in again.", false));
+    }
+
+    req.user = account;
     req.isAdmin = false;
     req.userRole = parent ? "parent" : "teacher";
     next();
@@ -87,6 +94,11 @@ exports.staffRoute = async (req, res, next) => {
     const teacher = await Teacher.findById(decoded._id);
     if (!teacher) {
       return res.status(401).json(ApiResponse({}, "Unauthorized Access", false));
+    }
+    if (teacher.status && teacher.status !== "ACTIVE") {
+      return res
+        .status(401)
+        .json(ApiResponse({}, "Account is not active. Please sign in again.", false));
     }
     req.user = teacher;
     req.isAdmin = false;

@@ -3,7 +3,9 @@ npm-debug.log
 .DS_Store
 
 # Environment and secrets
-
+.env
+.env.*
+!.env.example
 
 # TLS certificates and keys
 certs/

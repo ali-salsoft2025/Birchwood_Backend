@@ -5,7 +5,9 @@ const sanitizeUser = require("../../Helpers/sanitizeUser");
 const {
   assignParentImagesFromBody,
   replaceParentUploadedImages,
+  deleteParentUploadedImages,
 } = require("../../Helpers/parentImages");
+const { syncChildParentAssignment } = require("../../Helpers/childParentSync");
 
 const PARENT_PROFILE_FIELDS = [
   "fatherFirstName",
@@ -135,6 +137,45 @@ exports.getChildProfileById = async (req, res) => {
     }
 
     return res.status(200).json(ApiResponse({ child }, "Child found", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, error.message, false));
+  }
+};
+
+/**
+ * Apple Guideline 5.1.1(v): parent self-service account deletion.
+ * Unlinks children (student school records are preserved), then deletes the parent account.
+ */
+exports.deleteAccount = async (req, res) => {
+  try {
+    if (req.userRole !== "parent") {
+      return res.status(403).json(ApiResponse({}, "Only parents can delete a parent account", false));
+    }
+
+    const parent = await Parent.findById(req.user._id);
+    if (!parent) {
+      return res.status(404).json(ApiResponse({}, "Parent not found", false));
+    }
+
+    const linked = await Children.find({ parent: parent._id }).select("_id");
+    for (const child of linked) {
+      child.parent = null;
+      await child.save();
+      await syncChildParentAssignment(child._id, null, parent._id);
+    }
+
+    deleteParentUploadedImages(parent);
+    await Parent.findByIdAndDelete(parent._id);
+
+    return res
+      .status(200)
+      .json(
+        ApiResponse(
+          {},
+          "Your parent account has been deleted. Linked children remain in school records.",
+          true,
+        ),
+      );
   } catch (error) {
     return res.status(500).json(ApiResponse({}, error.message, false));
   }

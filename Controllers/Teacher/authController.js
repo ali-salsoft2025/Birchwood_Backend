@@ -26,6 +26,11 @@ exports.signin = async (req, res) => {
             ApiResponse({}, "Account Still Pending Approval from Admin!", false)
           );
         }
+        if (user.status === "INACTIVE") {
+          return res.json(
+            ApiResponse({}, "Your teacher account is inactive. Contact the school.", false)
+          );
+        }
         const token = generateToken(user);
 
         return res.json(

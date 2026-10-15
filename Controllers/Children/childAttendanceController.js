@@ -482,6 +482,14 @@ exports.getAttendanceByMonth = async (req, res) => {
 //get children Attendance By Month
 exports.getMonthlyAttendanceStats = async (req, res) => {  
   try {
+    const currentChild = await Children.findById(req.params.child).populate("classroom");
+    if (!currentChild) {
+      return res.status(404).json(ApiResponse({}, "Child not found", false));
+    }
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+
     let { month, year } = req.query;
 
     const schoolNow = schoolParts(new Date());
@@ -545,7 +553,12 @@ exports.getAttendanceById = async (req, res) => {
     const attendance = await Attendance.findById(req.params.id);
 
     if (!attendance) {
-      return res.json(ApiResponse({}, "Attendance not found", true));
+      return res.status(404).json(ApiResponse({}, "Attendance not found", false));
+    }
+
+    const currentChild = await Children.findById(attendance.children).populate("classroom");
+    if (!(await ownsChild(req, currentChild))) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
     }
 
     return res.json(ApiResponse({ attendance }, "", true));

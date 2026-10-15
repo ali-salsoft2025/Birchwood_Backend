@@ -27,6 +27,7 @@ const mongoose = require("mongoose");
 const {
   assignTeacherToClassroom,
 } = require("../../Helpers/classroomTeacherAssignment");
+const { canReadClassroom } = require("../../Helpers/accessControl");
 
 exports.addClassroom = async (req, res) => {
   const { classroomName, classroomGrade, classroomBatch, description, teacher, color, classroomId } = req.body;
@@ -130,6 +131,37 @@ exports.getAllClassrooms = async (req, res) => {
     }
     ];
 
+    // Non-admins only see classrooms they are authorized for.
+    if (!req.isAdmin) {
+      if (req.userRole === "teacher") {
+        const own = req.user.classroom && (req.user.classroom._id || req.user.classroom);
+        if (!own) {
+          return res.json(ApiResponse({ docs: [], totalDocs: 0, limit, page, totalPages: 0 }));
+        }
+        finalAggregate.unshift({
+          $match: { _id: new mongoose.Types.ObjectId(String(own)) },
+        });
+      } else if (req.userRole === "parent") {
+        const kids = await Children.find({ parent: req.user._id })
+          .select("classroom")
+          .lean();
+        const ids = [
+          ...new Set(
+            kids
+              .map((k) => k.classroom)
+              .filter(Boolean)
+              .map((id) => String(id)),
+          ),
+        ].map((id) => new mongoose.Types.ObjectId(id));
+        if (!ids.length) {
+          return res.json(ApiResponse({ docs: [], totalDocs: 0, limit, page, totalPages: 0 }));
+        }
+        finalAggregate.unshift({ $match: { _id: { $in: ids } } });
+      } else {
+        return res.status(403).json(ApiResponse({}, "Access denied", false));
+      }
+    }
+
     if (req.query.status) {
       pushInMatch(finalAggregate, "status", parseQueryList(req.query.status));
     }
@@ -176,12 +208,16 @@ exports.getAllClassrooms = async (req, res) => {
 // Get classroom by ID
 exports.getClassroomById = async (req, res) => {
   try {
+    if (!(await canReadClassroom(req, req.params.id))) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+
     const classroom = await Classroom.findById(req.params.id)
       .populate("teacher", "firstName lastName email phone image teacherId status")
       .lean();
 
     if (!classroom) {
-      return res.json(ApiResponse({}, "Classroom not found", true));
+      return res.status(404).json(ApiResponse({}, "Classroom not found", false));
     }
 
     const students = await Children.find({ classroom: classroom._id })
@@ -201,6 +237,9 @@ function escapeTeacherSearch(value) {
 
 exports.searchTeachers = async (req, res) => {
   try {
+    if (!req.isAdmin) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
     const keyword = String(req.query.keyword || "").trim();
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
