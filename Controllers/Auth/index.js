@@ -32,10 +32,6 @@ exports.emailVerificationCode = async (req, res) => {
 
     const verificationCode = generateString(4, false, true);
     await createResetToken(email, verificationCode);
-    const encoded = Buffer.from(
-      JSON.stringify({ email, code: verificationCode }),
-      "ascii"
-    ).toString("base64");
     const sent = await sendPasswordResetEmail(email, verificationCode);
 
     if (!sent) {
@@ -49,11 +45,12 @@ exports.emailVerificationCode = async (req, res) => {
           ),
         );
     }
+    // Do not return the recovery code (or a base64 blob containing it) in the API body.
     res
       .status(201)
       .json(
         ApiResponse(
-          { encodedEmail: encoded },
+          { emailed: true },
           "Recovery code has been emailed to your registered email address",
           true
         )

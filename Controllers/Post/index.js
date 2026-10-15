@@ -84,18 +84,56 @@ exports.addPost = async (req, res) => {
   imagesArr = [...imagesArr, ...streamedImages];
   let videosArr = [...uploadedVideos, ...streamed];
 
-  console.log(req.files);
   try {
-    const authorId = req.isAdmin && req.body.author ? req.body.author : req.user._id;
+    const authorId = req.user._id;
+    let childIds = [];
+    if (children) {
+      childIds =
+        typeof children === "string" ? JSON.parse(children) : children;
+      if (!Array.isArray(childIds)) childIds = [childIds];
+      childIds = childIds.filter(Boolean);
+    }
+    const classroomId = classroom || null;
+
+    if (req.userRole === "teacher") {
+      const ownClassroom =
+        req.user.classroom && (req.user.classroom._id || req.user.classroom);
+      if (!ownClassroom) {
+        return res
+          .status(403)
+          .json(ApiResponse({}, "No classroom assigned", false));
+      }
+      if (classroomId && String(classroomId) !== String(ownClassroom)) {
+        return res
+          .status(403)
+          .json(ApiResponse({}, "You can only post to your classroom", false));
+      }
+      for (const childId of childIds) {
+        if (!(await assertCanAccessChild(req, res, childId))) return;
+      }
+    } else if (req.userRole === "parent") {
+      if (!childIds.length) {
+        return res
+          .status(400)
+          .json(ApiResponse({}, "Select at least one of your children", false));
+      }
+      for (const childId of childIds) {
+        if (!(await assertCanAccessChild(req, res, childId))) return;
+      }
+      // Parents may not invent a classroom audience beyond their children.
+    } else {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
+    }
+
     let newPost = new Post({
       content,
       activity,
-      children: children
-        ? typeof children === "string"
-          ? JSON.parse(children)
-          : children
-        : [],
-      classroom: classroom ? classroom : null,
+      children: childIds,
+      classroom:
+        req.userRole === "teacher"
+          ? classroomId ||
+            (req.user.classroom && (req.user.classroom._id || req.user.classroom))
+          : null,
       type,
       author: authorId,
       images: imagesArr,

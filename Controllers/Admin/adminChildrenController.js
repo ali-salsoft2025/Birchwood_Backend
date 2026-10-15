@@ -43,6 +43,17 @@ function buildChildPayload(body) {
       payload[field] = parseStringList(body[field]);
     }
   });
+  const feeKeys = ["monthlyAmount", "discountAmount", "feeActive"];
+  if (feeKeys.some((key) => Object.prototype.hasOwnProperty.call(body, key))) {
+    const monthly = Math.max(0, Number(body.monthlyAmount) || 0);
+    let discount = Math.max(0, Number(body.discountAmount) || 0);
+    if (discount > monthly) discount = monthly;
+    payload.fee = {
+      monthlyAmount: monthly,
+      discountAmount: discount,
+      active: String(body.feeActive ?? "true") !== "false",
+    };
+  }
   return payload;
 }
 

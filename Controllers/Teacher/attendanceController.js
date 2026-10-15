@@ -591,7 +591,14 @@ exports.getAttendanceById = async (req, res) => {
     const attendance = await Attendance.findById(req.params.id);
 
     if (!attendance) {
-      return res.json(ApiResponse({}, "Attendance not found", true));
+      return res.status(404).json(ApiResponse({}, "Attendance not found", false));
+    }
+
+    if (
+      !req.isAdmin &&
+      String(attendance.teacher) !== String(req.user._id)
+    ) {
+      return res.status(403).json(ApiResponse({}, "Access denied", false));
     }
 
     return res.json(ApiResponse({ attendance }, "", true));

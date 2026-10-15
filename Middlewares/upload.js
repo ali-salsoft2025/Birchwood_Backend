@@ -121,6 +121,22 @@ const uploadGallery = multer({
 
 exports.uploadGallery = wrapUpload(uploadGallery.array("images", 24));
 
+const PROOF_TYPES = [...IMAGE_TYPES, "application/pdf"];
+
+exports.uploadProof = wrapUpload(
+  multer({
+    storage: multiStorage,
+    limits,
+    fileFilter: (req, file, cb) => {
+      if (PROOF_TYPES.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error("Upload a photo or PDF"), false);
+      }
+    },
+  }).single("file")
+);
+
 const parentImageStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "Uploads/");
