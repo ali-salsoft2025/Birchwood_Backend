@@ -46,6 +46,20 @@ const schoolSettingsSchema = new Schema(
         ANNUAL: { type: Number, default: 10 },
       },
     },
+    feePolicy: {
+      dueDayOfMonth: { type: Number, default: 10 },
+      graceDays: { type: Number, default: 0 },
+      lateFeeMode: { type: String, enum: ["NONE", "FLAT", "PER_DAY"], default: "NONE" },
+      lateFeeAmount: { type: Number, default: 0 },
+      lateFeeCap: { type: Number, default: 0 },
+      reminderDaysBeforeDue: { type: Number, default: 3 },
+      paymentInstructions: {
+        accountTitle: { type: String, default: "" },
+        method: { type: String, default: "" },
+        accountNumber: { type: String, default: "" },
+        note: { type: String, default: "" },
+      },
+    },
   },
   { timestamps: true }
 );

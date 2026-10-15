@@ -12,6 +12,8 @@ const {
   deleteTeacherDutyDay,
   getPendingTeacherLeaves,
   reviewTeacherLeave,
+  getFeePolicy,
+  updateFeePolicy,
 } = require("../../Controllers/Settings");
 const { adminRoute, authenticatedRoute } = require("../../Middlewares/auth");
 
@@ -29,5 +31,7 @@ router.post("/teacherDutyDays", adminRoute, saveTeacherDutyDay);
 router.post("/teacherDutyDays/delete/:id", adminRoute, deleteTeacherDutyDay);
 router.get("/pendingTeacherLeaves", adminRoute, getPendingTeacherLeaves);
 router.post("/reviewTeacherLeave/:id", adminRoute, reviewTeacherLeave);
+router.get("/getFeePolicy", authenticatedRoute, getFeePolicy);
+router.post("/updateFeePolicy", adminRoute, updateFeePolicy);
 
 module.exports = router;

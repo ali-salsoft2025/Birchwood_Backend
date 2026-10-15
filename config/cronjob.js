@@ -15,6 +15,7 @@ const {
 
 const moment = require("moment");
 const { purgeOldNotifications } = require("../Helpers/notificationCleanup");
+const { runFeeReminders } = require("../Helpers/feePolicy");
 const SCHOOL_TZ = "Asia/Karachi";
 const CHECKIN_TITLE = "Mark today's check-in";
 
@@ -194,6 +195,17 @@ cron.schedule('15 2 * * *', async () => {
     }
   } catch (error) {
     console.error('Error purging old notifications:', error);
+  }
+}, { timezone: SCHOOL_TZ });
+
+cron.schedule("0 8 * * *", async () => {
+  try {
+    const result = await runFeeReminders();
+    if (result.reminders || result.overdueNotices) {
+      console.log(`Fee notices: ${result.reminders} reminder(s), ${result.overdueNotices} overdue.`);
+    }
+  } catch (error) {
+    console.error("Error sending fee reminders:", error);
   }
 }, { timezone: SCHOOL_TZ });
 

@@ -32,18 +32,67 @@ const feeSchema = new Schema(
     },
     dueDate: {
       type: Date,
-      default: new Date(),
+    },
+    issuedAt: {
+      type: Date,
     },
     paymentDate: {
       type: Date,
-      default: new Date(),
     },
     isPaid: {
       type: Boolean,
       default: false,
     },
+    baseAmount: {
+      type: Number,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+    lateFeeAmount: {
+      type: Number,
+      default: 0,
+    },
+    status: {
+      type: String,
+      enum: ["ISSUED", "PROOF_SUBMITTED", "REJECTED", "PAID", "WAIVED", "CANCELLED"],
+    },
+    proof: {
+      file: { type: String, default: "" },
+      note: { type: String, default: "" },
+      reference: { type: String, default: "" },
+      submittedAt: { type: Date },
+    },
+    rejectReason: {
+      type: String,
+      default: "",
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "admin",
+    },
+    reviewedAt: {
+      type: Date,
+    },
+    reminderSentAt: {
+      type: Date,
+    },
+    overdueNotifiedAt: {
+      type: Date,
+    },
   },
   { timestamps: true }
+);
+
+feeSchema.index(
+  { children: 1, month: 1, year: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["ISSUED", "PROOF_SUBMITTED", "REJECTED", "PAID", "WAIVED"] },
+    },
+  }
 );
 
 feeSchema.plugin(mongoosePaginate);

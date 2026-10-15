@@ -326,3 +326,26 @@ exports.reviewTeacherLeave = async (req, res) => {
     return res.json(ApiResponse({}, error.message, false));
   }
 };
+
+exports.getFeePolicy = async (req, res) => {
+  try {
+    const { loadFeePolicy } = require("../../Helpers/feePolicy");
+    const feePolicy = await loadFeePolicy();
+    return res.json(ApiResponse({ feePolicy }, "", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.updateFeePolicy = async (req, res) => {
+  try {
+    const { normalizeFeePolicy } = require("../../Helpers/feePolicy");
+    const doc = await SchoolSettings.getSingleton();
+    doc.feePolicy = normalizeFeePolicy(req.body || {});
+    doc.markModified("feePolicy");
+    await doc.save();
+    return res.json(ApiResponse({ feePolicy: normalizeFeePolicy(doc.feePolicy) }, "Fee policy saved", true));
+  } catch (error) {
+    return res.json(ApiResponse({}, error.message, false));
+  }
+};

@@ -73,6 +73,11 @@ const childSchema = new Schema(
     image: {
       type: String,
     },
+    fee: {
+      monthlyAmount: { type: Number, default: 0 },
+      discountAmount: { type: Number, default: 0 },
+      active: { type: Boolean, default: true },
+    },
   },
   { timestamps: true }
 );
