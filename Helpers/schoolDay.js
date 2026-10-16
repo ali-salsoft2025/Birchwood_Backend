@@ -203,14 +203,15 @@ function childDayView(record, date = new Date(), options = {}) {
   }
 
   if (status === "ABSENT" || (!status && window.late)) {
+    const parentCheckInOpen = window.checkInOpen && !window.pickupOpen;
     return {
       ...base,
       todayStatus: "ABSENT",
       todayCheckIn: null,
       todayCheckOut: null,
-      todayPrompt: window.checkInOpen ? "CHECKIN" : null,
+      todayPrompt: parentCheckInOpen ? "CHECKIN" : null,
       attendanceDot: "red",
-      checkInOpen: window.checkInOpen,
+      checkInOpen: parentCheckInOpen,
       checkInLate: window.late,
       canLeave: true,
     };
@@ -242,14 +243,15 @@ function childDayView(record, date = new Date(), options = {}) {
     };
   }
 
+  const parentCheckInOpen = window.checkInOpen && !window.pickupOpen;
   return {
     ...base,
     todayStatus: "UNMARKED",
     todayCheckIn: null,
     todayCheckOut: null,
-    todayPrompt: window.checkInOpen ? "CHECKIN" : null,
+    todayPrompt: parentCheckInOpen ? "CHECKIN" : null,
     attendanceDot: "red",
-    checkInOpen: window.checkInOpen,
+    checkInOpen: parentCheckInOpen,
     checkInLate: false,
     canLeave: true,
   };

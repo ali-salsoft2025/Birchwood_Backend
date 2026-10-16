@@ -235,7 +235,23 @@ exports.getChildrenByClassroom = async (req, res) => {
     const aggregate = Children.aggregate(listAggregate(req));
     const children = await Children.aggregatePaginate(aggregate, { page, limit });
     const { attachTodayAttendance } = require("../../Helpers/autoAbsent");
-    children.docs = await attachTodayAttendance(children.docs || []);
+    const { childDayView } = require("../../Helpers/schoolDay");
+    const { studentsClosedForDuty } = require("../../Helpers/teacherWorkDay");
+    const now = new Date();
+    const withToday = await attachTodayAttendance(children.docs || [], now);
+    const schoolClosed = await studentsClosedForDuty(now);
+    children.docs = withToday.map((child) => {
+      const view = childDayView(child.todayAttendance, now, {
+        schoolClosed,
+        openDuty: schoolClosed,
+      });
+      return {
+        ...child,
+        ...view,
+        checkIn:
+          view.todayStatus === "PRESENT" || view.todayStatus === "LATE",
+      };
+    });
     return res.json(ApiResponse(children));
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));

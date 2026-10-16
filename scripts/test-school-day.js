@@ -135,7 +135,34 @@ check(
     return view.todayPrompt === null && view.earlyPickup === true;
   })()
 );
-check("1:00 opens normal pickup", attendanceWindow(at("2026-09-24T08:00:00.000Z")).pickupOpen === true);
+const afterPickup = at("2026-09-24T08:00:00.000Z");
+check("1:00 opens normal pickup", attendanceWindow(afterPickup).pickupOpen === true);
+check(
+  "after pickup unmarked child is absent with no check-in prompt",
+  (() => {
+    const view = childDayView(null, afterPickup);
+    return (
+      view.todayStatus === "ABSENT" &&
+      view.todayPrompt === null &&
+      view.checkInOpen === false
+    );
+  })()
+);
+check(
+  "after pickup a saved absent record cannot be prompted for check-in",
+  (() => {
+    const view = childDayView({ status: "ABSENT" }, afterPickup);
+    return (
+      view.todayStatus === "ABSENT" &&
+      view.todayPrompt === null &&
+      view.checkInOpen === false
+    );
+  })()
+);
+check(
+  "present after pickup still needs pickup",
+  childDayView(present, afterPickup).todayPrompt === "PICKUP"
+);
 
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
