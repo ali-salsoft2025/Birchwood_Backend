@@ -77,6 +77,14 @@ exports.markCheckIn = async (req, res) => {
       const { checkInOpensLabel } = scheduleLabels();
       return res.status(400).json(ApiResponse({}, `Check-in opens at ${checkInOpensLabel}`, false));
     }
+    if (window.pickupOpen && (req.userRole === "parent" || req.userRole === "teacher")) {
+      const { pickupOpensLabel } = scheduleLabels();
+      const message =
+        req.userRole === "teacher"
+          ? `Check-in closed after ${pickupOpensLabel}. This day is marked absent. Use Set check-in and check-out if the child was present.`
+          : `Check-in closed after ${pickupOpensLabel}. This day is marked absent.`;
+      return res.status(400).json(ApiResponse({}, message, false));
+    }
 
     const currentChild = await Children.findById(children).populate("classroom");
     if (!currentChild) {

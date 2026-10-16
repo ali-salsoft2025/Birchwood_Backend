@@ -119,6 +119,39 @@ cron.schedule('0 0 * * 2-6', async () => {
   }
 }, { timezone: SCHOOL_TZ });
 
+// At pickup open (1:00 PM), mark unmarked children ABSENT so the day does not wait for midnight.
+cron.schedule('0 13 * * 1-5', async () => {
+  try {
+    const now = new Date();
+    if (!isSchoolWeekday(now)) return;
+    const { start, end } = schoolDayBounds(now);
+
+    const isHoliday = await Holiday.findOne({
+      date: { $gte: start, $lte: end },
+    });
+    if (isHoliday) return;
+
+    const childrens = await Children.find({ status: "ACTIVE" });
+    for (const children of childrens) {
+      const existingAttendance = await ChildAttendance.findOne({
+        children: children._id,
+        checkIn: { $gte: start, $lte: end },
+      });
+      if (!existingAttendance) {
+        await ChildAttendance.create({
+          children: children._id,
+          classroom: children.classroom,
+          checkIn: start,
+          markedBy: "ADMIN",
+          status: "ABSENT",
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error marking absent at pickup:', error);
+  }
+}, { timezone: SCHOOL_TZ });
+
 cron.schedule('0 7 * * 1-5', async () => {
   try {
     const now = new Date();
