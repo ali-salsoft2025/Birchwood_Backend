@@ -14,8 +14,11 @@ const VIDEO_TYPES = [
   "video/webm",
 ];
 
-const uniqueName = (originalname) =>
-  `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${path.extname(originalname)}`;
+const uniqueName = (originalname) => {
+  const safe = String(originalname || "upload.bin");
+  const ext = path.extname(safe) || ".bin";
+  return `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`;
+};
 
 const imageStorage = multer.diskStorage({
   destination: function (req, file, cb) {
