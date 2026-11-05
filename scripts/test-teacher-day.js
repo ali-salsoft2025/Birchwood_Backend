@@ -3,6 +3,7 @@ const {
   normalizeTeacherRules,
   punchState,
   teacherDayPlan,
+  teacherShiftClosed,
   quotaAllows,
   clockToMinutes,
 } = require("../Helpers/teacherDay");
@@ -66,6 +67,17 @@ check("duty check-in opens one hour before 12", calledIn("10:59").punch.checkInO
 check("12:15 on a noon duty is still on time", calledIn("12:15").punch.late === false);
 check("12:16 on a noon duty is late", calledIn("12:16").punch.late === true);
 check("duty checkout follows 4:00 PM", calledIn("15:59").punch.checkoutOpen === false && calledIn("16:00").punch.checkoutOpen === true);
+const openAfternoon = teacherDayPlan({ weekday: 4, rules, date: atKarachi("10:00"), timeZone: "Asia/Karachi" });
+openAfternoon.key = "2026-09-24";
+const closedAfternoon = teacherDayPlan({ weekday: 4, rules, date: atKarachi("14:00"), timeZone: "Asia/Karachi" });
+closedAfternoon.key = "2026-09-24";
+const previousMorning = teacherDayPlan({ weekday: 3, rules, date: atKarachi("10:00"), timeZone: "Asia/Karachi" });
+previousMorning.key = "2026-09-23";
+check("before checkout a work day is still open", teacherShiftClosed(openAfternoon, "2026-09-24") === false);
+check("at checkout a work day with no mark is closed", teacherShiftClosed(closedAfternoon, "2026-09-24") === true);
+check("a previous work day is closed even in the morning", teacherShiftClosed(previousMorning, "2026-09-24") === true);
+check("a weekend is not closed into an absence", teacherShiftClosed(saturday, "2026-09-26") === false);
+
 check(
   "a duty day overrides a teacher holiday",
   teacherDayPlan({

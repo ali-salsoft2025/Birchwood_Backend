@@ -111,6 +111,16 @@ function teacherDayPlan({ weekday, duty, teacherHoliday, rules, date, timeZone =
   };
 }
 
+/** A work day is closed once checkout has started, or the calendar day is already over. */
+function teacherShiftClosed(plan, todayKey) {
+  if (!plan || plan.off) return false;
+  if (plan.key && todayKey) {
+    if (plan.key < todayKey) return true;
+    if (plan.key > todayKey) return false;
+  }
+  return Boolean(plan.punch && plan.punch.checkoutOpen);
+}
+
 function punchState(date, rules, timeZone = DEFAULT_SCHOOL_TIME_ZONE) {
   const normalized = normalizeTeacherRules(rules);
   const minutes = minutesNow(date, timeZone);
@@ -144,6 +154,7 @@ module.exports = {
   minutesToClockInput,
   describeTeacherRules,
   teacherDayPlan,
+  teacherShiftClosed,
   punchState,
   quotaAllows,
   calendarYearBounds,

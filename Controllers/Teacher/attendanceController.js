@@ -85,6 +85,21 @@ exports.markCheckIn = async (req, res) => {
             if (existingAttendance.status !== "ABSENT") {
                 return res.status(400).json(ApiResponse({}, "Check-In Already Marked", false));
             }
+        }
+
+        if (punch.checkoutOpen) {
+            const { ensureTeacherAbsent } = require("../../Helpers/autoAbsent");
+            await ensureTeacherAbsent(teacher._id, day, timeZone, now);
+            return res.status(400).json(
+                ApiResponse(
+                    {},
+                    `Check-in closed after ${day.described.checkOutLabel}. This day is marked absent.`,
+                    false
+                )
+            );
+        }
+
+        if (existingAttendance) {
             existingAttendance.status = "PRESENT";
             existingAttendance.checkIn = now;
             existingAttendance.checkOut = null;
@@ -476,6 +491,12 @@ exports.getAttendanceByMonth = async (req, res) => {
     }
 
     const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(year, month, timeZone);
+    const { closeUnmarkedTeacherDays } = require("../../Helpers/autoAbsent");
+    await closeUnmarkedTeacherDays(new Date(), {
+      teacherId: req.user._id,
+      from: startOfMonth,
+      to: endOfMonth,
+    });
 
     // Aggregate attendance statistics
     const attendanceStats = await Attendance.aggregate([
@@ -542,6 +563,12 @@ exports.getMonthlyAttendanceStats = async (req, res) => {
       parseInt(month, 10),
       timeZone
     );
+    const { closeUnmarkedTeacherDays } = require("../../Helpers/autoAbsent");
+    await closeUnmarkedTeacherDays(new Date(), {
+      teacherId: req.user._id,
+      from: startOfMonth,
+      to: endOfMonth,
+    });
 
    // Aggregate to count status types
    const attendanceStats = await Attendance.aggregate([
