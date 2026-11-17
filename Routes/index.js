@@ -36,5 +36,7 @@ router.use("/admin/teacher", require("./Admin/AdminTeacher"));
 router.use("/admin/parent", require("./Admin/AdminParent"));
 router.use("/admin/children", require("./Admin/AdminChildren"));
 router.use("/admin/dashboard", require("./Admin/AdminDashboard"));
+router.use("/admin/jobs", require("./Admin/AdminJob"));
+router.use("/public", require("./Public"));
 
 module.exports = router;

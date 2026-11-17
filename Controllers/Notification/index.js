@@ -1,4 +1,5 @@
 const Notification = require("../../Models/Notification");
+const DeviceToken = require("../../Models/DeviceToken");
 const moment = require("moment");
 const mongoose = require("mongoose");
 const { ApiResponse } = require("../../Helpers/index");
@@ -543,5 +544,73 @@ exports.getUnreadUserNotifications = async (req, res) => {
     );
   } catch (error) {
     return res.json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.registerDeviceToken = async (req, res) => {
+  try {
+    if (req.isAdmin || !["parent", "teacher"].includes(req.userRole)) {
+      return res
+        .status(403)
+        .json(ApiResponse({}, "Only parent or teacher accounts can register push tokens", false));
+    }
+
+    const token = String(req.body?.token || "").trim();
+    if (!token || token.length < 20) {
+      return res.status(400).json(ApiResponse({}, "Valid FCM token is required", false));
+    }
+
+    const platformRaw = String(req.body?.platform || "unknown").toLowerCase();
+    const platform = ["ios", "android"].includes(platformRaw)
+      ? platformRaw
+      : "unknown";
+    const app =
+      req.userRole === "teacher"
+        ? "teacher"
+        : String(req.body?.app || "student").toLowerCase() === "teacher"
+          ? "teacher"
+          : "student";
+
+    const device = await DeviceToken.findOneAndUpdate(
+      { token },
+      {
+        token,
+        user: req.user._id,
+        role: req.userRole,
+        platform,
+        app,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    return res.json(
+      ApiResponse(
+        { id: device._id, platform: device.platform, app: device.app },
+        "Device token registered",
+        true
+      )
+    );
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, error.message, false));
+  }
+};
+
+exports.unregisterDeviceToken = async (req, res) => {
+  try {
+    if (req.isAdmin || !["parent", "teacher"].includes(req.userRole)) {
+      return res
+        .status(403)
+        .json(ApiResponse({}, "Only parent or teacher accounts can unregister push tokens", false));
+    }
+
+    const token = String(req.body?.token || "").trim();
+    if (!token) {
+      return res.status(400).json(ApiResponse({}, "FCM token is required", false));
+    }
+
+    await DeviceToken.deleteOne({ token, user: req.user._id });
+    return res.json(ApiResponse({}, "Device token removed", true));
+  } catch (error) {
+    return res.status(500).json(ApiResponse({}, error.message, false));
   }
 };

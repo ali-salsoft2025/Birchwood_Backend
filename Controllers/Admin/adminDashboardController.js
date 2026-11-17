@@ -264,6 +264,8 @@ exports.getOverview = async (req, res) => {
       ? String(req.query.range)
       : "thisWeek";
     const overviewWindow = getOverviewWindow(rangeKey, now);
+    const { closeUnmarkedTeacherDays } = require("../../Helpers/autoAbsent");
+    await closeUnmarkedTeacherDays(now, { lookbackDays: 31 });
 
     const [
       students,

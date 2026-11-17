@@ -359,6 +359,12 @@ exports.getTeacherAttendanceByMonth = async (req, res) => {
     month = parseInt(month || schoolNow.month + 1, 10);
     year = parseInt(year || schoolNow.year, 10);
     const { start: startOfMonth, end: endOfMonth } = schoolMonthBounds(year, month, timeZone);
+    const { closeUnmarkedTeacherDays } = require("../../Helpers/autoAbsent");
+    await closeUnmarkedTeacherDays(new Date(), {
+      teacherId: req.params.id,
+      from: startOfMonth,
+      to: endOfMonth,
+    });
 
     const attendance = await TeacherAttendance.find({
       teacher: req.params.id,

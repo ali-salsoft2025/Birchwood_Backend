@@ -13,6 +13,8 @@ const {
   bulkUserNotifications,
   getUserNotifications,
   getUnreadUserNotifications,
+  registerDeviceToken,
+  unregisterDeviceToken,
 } = require("../../Controllers/Notification");
 const { adminRoute, authenticatedRoute } = require("../../Middlewares/auth");
 
@@ -32,5 +34,7 @@ router.post("/deleteNotification/:id", adminRoute, deleteNotification);
 router.get("/deleteNotification/:id", adminRoute, deleteNotification);
 router.post("/deleteUserNotification/:id", authenticatedRoute, deleteUserNotification);
 router.post("/bulkUserNotifications", authenticatedRoute, bulkUserNotifications);
+router.post("/registerDeviceToken", authenticatedRoute, registerDeviceToken);
+router.post("/unregisterDeviceToken", authenticatedRoute, unregisterDeviceToken);
 
 module.exports = router;
